@@ -914,7 +914,14 @@
                 this.lastOrientation.gamma = this.lastOrientation.gamma * this.smoothing + (event.gamma || 0) * (1 - this.smoothing);
                 
                 // Calculate relative orientation (subtract calibrated neutral position)
-                const relativeAlpha = this.lastOrientation.alpha - this.calibratedOrientation.alpha;
+                // const relativeAlpha = this.lastOrientation.alpha - this.calibratedOrientation.alpha;
+                // Calculate relative orientation  
+                let relativeAlpha = this.lastOrientation.alpha - this.calibratedOrientation.alpha;
+
+                // Constrain to ±180° for shortest path (this is the real fix)
+                while (relativeAlpha > 180) relativeAlpha -= 360;
+                while (relativeAlpha < -180) relativeAlpha += 360;
+
                 const relativeBeta = this.lastOrientation.beta - this.calibratedOrientation.beta;
                 const relativeGamma = this.lastOrientation.gamma - this.calibratedOrientation.gamma;
                 
