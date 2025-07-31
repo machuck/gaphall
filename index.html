@@ -1,0 +1,1479 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#000000">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>GAF Multi-Artwork Virtual Gallery</title>
+    
+    <!-- Babylon.js CDN -->
+    <script src="https://unpkg.com/babylonjs@6.37.1/babylon.js"></script>
+    <script src="https://unpkg.com/babylonjs-loaders@6.37.1/babylonjs.loaders.js"></script>
+    <script>
+        if ('serviceWorker' in navigator) {
+          window.addEventListener('load', () => {
+            navigator.serviceWorker.register('/sw.js')
+              .then((registration) => {
+                console.log('SW registered: ', registration);
+              })
+              .catch((registrationError) => {
+                console.log('SW registration failed: ', registrationError);
+              });
+          });
+        }
+    </script>
+    
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #000;
+            color: #fff;
+            overflow: hidden;
+            touch-action: manipulation;
+        }
+        
+        #canvas {
+            width: 100vw;
+            height: 100vh;
+            display: block;
+            outline: none;
+            touch-action: none;
+        }
+        
+        .ui-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 100;
+        }
+        
+        .controls {
+            position: absolute;
+            top: 15px;
+            left: 15px;
+            background: rgba(0, 0, 0, 0.1);
+            padding: 10px;
+            border-radius: 6px;
+            pointer-events: auto;
+            max-width: 140px;
+            backdrop-filter: blur(8px);
+            transition: all 0.4s ease;
+            opacity: 1;
+            transform: translateY(0);
+        }
+        
+        .controls.hidden {
+            opacity: 0;
+            transform: translateY(-20px);
+            pointer-events: none;
+        }
+        
+        .controls:hover {
+            background: rgba(0, 0, 0, 0.8);
+        }
+        
+        .controls h3 {
+            margin-bottom: 8px;
+            font-size: 12px;
+            opacity: 0.6;
+            transition: opacity 0.3s ease;
+        }
+        
+        .controls:hover h3 {
+            opacity: 1;
+        }
+        
+        .controls button {
+            display: block;
+            width: 100%;
+            margin: 3px 0;
+            padding: 8px;
+            font-size: 11px;
+            background: rgba(0, 102, 204, 0.3);
+            color: rgba(255, 255, 255, 0.8);
+            border: 1px solid rgba(0, 102, 204, 0.3);
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            backdrop-filter: blur(3px);
+        }
+        
+        .controls button:hover {
+            background: rgba(0, 102, 204, 0.8);
+            color: white;
+            border-color: #0066cc;
+            transform: translateY(-1px);
+        }
+        
+        .controls button:disabled {
+            opacity: 0.3;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .info {
+            position: absolute;
+            bottom: 15px;
+            left: 15px;
+            background: rgba(0, 0, 0, 0.4);
+            padding: 6px 10px;
+            border-radius: 4px;
+            pointer-events: auto;
+            backdrop-filter: blur(8px);
+            transition: all 0.4s ease;
+            opacity: 1;
+            transform: translateY(0);
+            font-size: 10px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            max-width: 90vw;
+        }
+        
+        .info.hidden {
+            opacity: 0;
+            transform: translateY(20px);
+            pointer-events: none;
+        }
+        
+        .info-item {
+            white-space: nowrap;
+            opacity: 0.8;
+        }
+        
+        .info-separator {
+            opacity: 0.4;
+        }
+        
+        .upload-modal {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(20, 20, 20, 0.95);
+            padding: 20px;
+            border-radius: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            backdrop-filter: blur(10px);
+            pointer-events: auto;
+            max-width: 300px;
+            width: 90%;
+            opacity: 0;
+            transform: translate(-50%, -50%) scale(0.9);
+            transition: all 0.3s ease;
+            z-index: 200;
+        }
+        
+        .upload-modal.show {
+            opacity: 1;
+            transform: translate(-50%, -50%) scale(1);
+            pointer-events: auto;
+        }
+        
+        .upload-modal h4 {
+            margin-bottom: 12px;
+            font-size: 14px;
+            text-align: center;
+        }
+        
+        .upload-fields {
+            margin: 10px 0;
+        }
+        
+        .upload-fields input,
+        .upload-fields textarea {
+            width: 100%;
+            margin: 5px 0;
+            padding: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            border-radius: 4px;
+            background: rgba(0, 0, 0, 0.5);
+            color: white;
+            font-size: 12px;
+        }
+        
+        .upload-fields input::placeholder,
+        .upload-fields textarea::placeholder {
+            color: rgba(255, 255, 255, 0.5);
+        }
+        
+        .upload-fields textarea {
+            height: 50px;
+            resize: vertical;
+        }
+        
+        .upload-buttons {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+        }
+        
+        .upload-buttons button {
+            flex: 1;
+            padding: 10px;
+            font-size: 12px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .btn-primary {
+            background: #0066cc;
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            background: #0056b3;
+        }
+        
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.2);
+            color: white;
+        }
+        
+        .btn-secondary:hover {
+            background: rgba(255, 255, 255, 0.3);
+        }
+        
+        input[type="file"] {
+            display: none;
+        }
+        
+        .loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            z-index: 300;
+        }
+        
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid #333;
+            border-top: 4px solid #0066cc;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 10px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .notification {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(0, 102, 204, 0.9);
+            color: white;
+            padding: 10px 15px;
+            border-radius: 6px;
+            font-size: 12px;
+            opacity: 0;
+            transform: translateX(20px);
+            transition: all 0.3s ease;
+            pointer-events: none;
+            z-index: 150;
+        }
+        
+        .notification.show {
+            opacity: 1;
+            transform: translateX(0);
+        }
+        
+        .orientation-hint {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            background: rgba(0, 0, 0, 0.4);
+            color: white;
+            padding: 6px 8px;
+            border-radius: 4px;
+            font-size: 10px;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+            pointer-events: none;
+            z-index: 120;
+            backdrop-filter: blur(4px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            max-width: 100px;
+            text-align: center;
+        }
+        
+        .orientation-hint.show {
+            opacity: 0.7;
+        }
+        
+        .orientation-hint::before {
+            content: "📱→📺";
+            display: block;
+            font-size: 14px;
+            margin-bottom: 2px;
+        }
+        
+        .gyro-permission {
+            position: absolute;
+            bottom: 60px;
+            left: 15px;
+            background: rgba(0, 102, 204, 0.9);
+            color: white;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 11px;
+            cursor: pointer;
+            opacity: 0;
+            transition: all 0.3s ease;
+            pointer-events: none;
+            z-index: 140;
+            backdrop-filter: blur(8px);
+        }
+        
+        .gyro-permission.show {
+            opacity: 1;
+            pointer-events: auto;
+        }
+        
+        .gyro-permission:hover {
+            background: rgba(0, 102, 204, 1);
+        }
+        
+        /* Mobile optimizations */
+        @media (max-width: 768px) {
+            .controls {
+                top: 10px;
+                left: 10px;
+                max-width: 120px;
+            }
+            
+            .controls button {
+                padding: 6px;
+                font-size: 10px;
+            }
+            
+            .info {
+                bottom: 10px;
+                left: 10px;
+                font-size: 9px;
+                gap: 8px;
+                padding: 4px 8px;
+            }
+            
+            .upload-modal {
+                max-width: 280px;
+                padding: 15px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <canvas id="canvas"></canvas>
+    
+    <div class="ui-overlay">
+        <div class="controls" id="controls">
+            <h3>Gallery</h3>
+            <button onclick="app.showUpload()">Upload Art</button>
+            <button onclick="app.resetCamera()">Reset</button>
+            <button onclick="app.toggleLighting()">Toggle Lighting</button>
+            <button onclick="app.toggleGyro()" id="gyroToggle" style="display:none">Gyro: OFF</button>
+            <button onclick="app.recalibrateGyro()" id="gyroCalibrate" style="display:none">Calibrate</button>
+            <button onclick="app.nextArtwork()">Next Art</button>
+            <button onclick="app.nextRoom()" id="nextRoomBtn" style="display:none">Next Room</button>
+            <button onclick="app.clearGallery()">Clear Gallery</button>
+        </div>
+        
+        <div class="info" id="info">
+            <div class="info-item" id="artTitle">Virtual Gallery</div>
+            <div class="info-separator">•</div>
+            <div class="info-item" id="artCount">0 artworks</div>
+            <div class="info-separator">•</div>
+            <div class="info-item" id="roomInfo">Room 1</div>
+        </div>
+        
+        <div class="upload-modal" id="uploadModal">
+            <h4>Upload Artwork</h4>
+            <div class="upload-fields">
+                <input type="text" id="authorInput" placeholder="Artist name (optional)">
+                <textarea id="descriptionInput" placeholder="Description (optional)"></textarea>
+            </div>
+            <div class="upload-buttons">
+                <button class="btn-secondary" onclick="app.hideUpload()">Cancel</button>
+                <button class="btn-primary" onclick="app.selectFiles()">Choose Images</button>
+            </div>
+            <input type="file" id="fileInput" accept="image/jpeg,image/jpg,image/png" multiple>
+        </div>
+        
+        <div class="notification" id="notification"></div>
+        
+        <div class="orientation-hint" id="orientationHint">
+            Rotate for better view
+        </div>
+        
+        <div class="gyro-permission" id="gyroPermission" onclick="app.requestGyroPermission()">
+            Enable gyro controls
+        </div>
+    </div>
+    
+    <div class="loading" id="loading">
+        <div class="spinner"></div>
+        <p>Loading Gallery...</p>
+    </div>
+
+    <script>
+        // ========================================
+        // CONFIGURATION SETTINGS
+        // ========================================
+        // Edit these values to customize the gallery without modifying code:
+        // - Increase/decrease gyroscope.sensitivity for more/less responsive controls
+        // - Change colors.walls/floor to customize appearance  
+        // - Adjust camera.mobileFOV/iPhoneFOV for better mobile zoom
+        // - Modify lighting intensities for different moods
+        // - Set debug.showGyroValues = true to see live gyro data in console
+        // ========================================
+        const CONFIG = {
+            // Gallery Settings
+            gallery: {
+                maxArtworksPerRoom: 12,
+                roomSpacing: 25,
+                artworkWidth: 3,
+                artworkHeight: 2,
+                wallHeight: 4,
+                wallWidth: 20
+            },
+            
+            // Gyroscope Settings
+            gyroscope: {
+                sensitivity: 0.15,          // MUCH higher sensitivity (was 0.01)
+                smoothing: 0.7,             // Less smoothing for more responsiveness
+                maxRotationX: Math.PI/2,    // Limit up/down looking
+                deadZone: 2,                // Ignore small movements (degrees)
+                zoomSensitivity: 0.008,     // Gamma-based zoom control
+                autoCalibrate: true         // Auto-calibrate on start
+            },
+            
+            // Camera Settings
+            camera: {
+                defaultFOV: 0.8,           // Desktop default
+                mobileFOV: 1.2,            // Mobile default
+                iPhoneFOV: 1.4,            // iPhone specific
+                speed: 1.0,
+                minFOV: 0.3,
+                maxFOV: 1.8
+            },
+            
+            // Visual Settings
+            colors: {
+                floor: [0.2, 0.2, 0.2],           // Dark gray floor
+                walls: [0.9, 0.9, 0.9],           // Light gray walls
+                artworkEmissive: [0.3, 0.3, 0.3], // Artwork glow
+                background: [0, 0, 0]              // Black background
+            },
+            
+            // Lighting Settings
+            lighting: {
+                ambient: {
+                    normal: 1.0,
+                    bright: 2.0,
+                    dim: 0.3
+                },
+                directional: {
+                    normal: 1.0,
+                    bright: 2.0,
+                    dim: 0.3
+                },
+                spotlight: {
+                    normal: 0.8,
+                    bright: 1.5,
+                    dim: 0.2
+                }
+            },
+            
+            // UI Settings
+            ui: {
+                autoHideDelay: 4000,        // Auto-hide UI after 4 seconds
+                notificationDuration: 3000,  // Notification display time
+                orientationHintDuration: 5000, // Rotation hint duration
+                gyroPermissionDuration: 8000   // Permission button duration
+            },
+            
+            // Debug Settings
+            debug: {
+                showGyroValues: false,      // Show gyro values on screen
+                enableConsoleLog: true,     // Enable console logging
+                showFPS: false              // Show FPS counter
+            }
+        };
+
+        class MultiArtworkGallery {
+            constructor() {
+                this.canvas = document.getElementById('canvas');
+                this.engine = null;
+                this.scene = null;
+                this.camera = null;
+                this.artworks = [];
+                this.currentArtIndex = 0;
+                this.currentRoom = 1;
+                this.lightingMode = 'normal';
+                this.artworkPositions = [];
+                this.maxArtworksPerRoom = CONFIG.gallery.maxArtworksPerRoom;
+                this.db = null;
+                this.uiTimer = null;
+                this.infoTimer = null;
+                
+                // Gyroscope properties (using CONFIG)
+                this.gyroEnabled = false;
+                this.gyroSupported = false;
+                this.lastOrientation = { alpha: 0, beta: 0, gamma: 0 };
+                this.calibratedOrientation = { alpha: 0, beta: 0, gamma: 0 };
+                this.smoothing = CONFIG.gyroscope.smoothing;
+                this.gyroSensitivity = CONFIG.gyroscope.sensitivity;
+                this.zoomSensitivity = CONFIG.gyroscope.zoomSensitivity;
+                this.gyroDeadZone = CONFIG.gyroscope.deadZone * Math.PI / 180; // Convert to radians
+                
+                this.init();
+            }
+            
+            log(message) {
+                console.log(message);
+                this.showNotification(message);
+            }
+            
+            showNotification(message) {
+                const notification = document.getElementById('notification');
+                notification.textContent = message;
+                notification.classList.add('show');
+                
+                setTimeout(() => {
+                    notification.classList.remove('show');
+                }, CONFIG.ui.notificationDuration);
+            }
+            
+            showUI() {
+                const controls = document.getElementById('controls');
+                const info = document.getElementById('info');
+                
+                controls.classList.remove('hidden');
+                info.classList.remove('hidden');
+                
+                // Clear existing timers
+                clearTimeout(this.uiTimer);
+                clearTimeout(this.infoTimer);
+                
+                // Auto-hide after 4 seconds
+                this.uiTimer = setTimeout(() => {
+                    controls.classList.add('hidden');
+                }, CONFIG.ui.autoHideDelay);
+                
+                this.infoTimer = setTimeout(() => {
+                    info.classList.add('hidden');
+                }, CONFIG.ui.autoHideDelay);
+            }
+            
+            setupUIAutoHide() {
+                // Show UI on screen tap/click
+                this.canvas.addEventListener('click', () => {
+                    this.showUI();
+                });
+                
+                this.canvas.addEventListener('touchstart', (e) => {
+                    if (e.touches.length === 1) {
+                        this.showUI();
+                    }
+                });
+                
+                // Keep UI visible on desktop hover
+                const controls = document.getElementById('controls');
+                const info = document.getElementById('info');
+                
+                if (!this.isMobile()) {
+                    controls.addEventListener('mouseenter', () => {
+                        clearTimeout(this.uiTimer);
+                    });
+                    
+                    info.addEventListener('mouseenter', () => {
+                        clearTimeout(this.infoTimer);
+                    });
+                }
+            }
+            
+            isMobile() {
+                return /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+            }
+            
+            async init() {
+                try {
+                    await this.initDB();
+                    this.engine = new BABYLON.Engine(this.canvas, true);
+                    this.scene = new BABYLON.Scene(this.engine);
+                    
+                    this.setupCamera();
+                    this.setupLighting();
+                    this.createGallery();
+                    this.setupArtworkPositions();
+                    this.setupFileUpload();
+                    this.setupUIAutoHide();
+                    this.initGyroscope();
+                    this.setupOrientationDetection();
+                    
+                    await this.loadStoredArtworks();
+                    
+                    this.engine.runRenderLoop(() => {
+                        this.scene.render();
+                    });
+                    
+                    window.addEventListener('resize', () => {
+                        this.engine.resize();
+                    });
+                    
+                    document.getElementById('loading').style.display = 'none';
+                    
+                    // Initial UI state
+                    this.updateUI(); // Update UI to show gyro button if supported
+                    setTimeout(() => {
+                        this.showUI();
+                    }, 500);
+                    
+                    this.log('Gallery ready!');
+                    
+                } catch (error) {
+                    this.log(`Error: ${error.message}`);
+                    console.error(error);
+                }
+            }
+            
+            async initDB() {
+                // Note: IndexedDB is local to each browser/device
+                // This means each device (computer, iPhone, etc.) has its own separate gallery
+                return new Promise((resolve, reject) => {
+                    const request = indexedDB.open('GalleryDB', 1);
+                    
+                    request.onerror = () => reject(request.error);
+                    request.onsuccess = () => {
+                        this.db = request.result;
+                        resolve();
+                    };
+                    
+                    request.onupgradeneeded = (e) => {
+                        const db = e.target.result;
+                        if (!db.objectStoreNames.contains('artworks')) {
+                            const store = db.createObjectStore('artworks', { keyPath: 'id', autoIncrement: true });
+                            store.createIndex('room', 'room', { unique: false });
+                        }
+                    };
+                });
+            }
+            
+            async saveArtwork(artworkData) {
+                const transaction = this.db.transaction(['artworks'], 'readwrite');
+                const store = transaction.objectStore('artworks');
+                await store.add(artworkData);
+            }
+            
+            async loadStoredArtworks() {
+                const transaction = this.db.transaction(['artworks'], 'readonly');
+                const store = transaction.objectStore('artworks');
+                const request = store.getAll();
+                
+                request.onsuccess = () => {
+                    const storedArtworks = request.result;
+                    if (storedArtworks.length > 0) {
+                        this.log(`Loading ${storedArtworks.length} stored artworks...`);
+                    }
+                    
+                    storedArtworks.forEach((data, index) => {
+                        setTimeout(() => {
+                            this.restoreArtwork(data);
+                        }, index * 100);
+                    });
+                    
+                    if (storedArtworks.length > 0) {
+                        setTimeout(() => {
+                            this.setDefaultCameraPosition();
+                        }, storedArtworks.length * 100 + 500);
+                    }
+                };
+            }
+            
+            async clearStoredArtworks() {
+                const transaction = this.db.transaction(['artworks'], 'readwrite');
+                const store = transaction.objectStore('artworks');
+                await store.clear();
+            }
+            
+            setupCamera() {
+                this.camera = new BABYLON.UniversalCamera('camera', 
+                    new BABYLON.Vector3(0, 1.6, -3), this.scene);
+                this.camera.setTarget(BABYLON.Vector3.Zero());
+                this.camera.attachControl(this.canvas, true);
+                this.camera.speed = CONFIG.camera.speed;
+                this.camera.keysUp = [87]; // W
+                this.camera.keysDown = [83]; // S
+                this.camera.keysLeft = [65]; // A
+                this.camera.keysRight = [68]; // D
+                
+                // Adjust field of view using CONFIG
+                if (this.isMobile()) {
+                    this.camera.fov = CONFIG.camera.mobileFOV;
+                    
+                    // Extra zoom out for iPhone (smaller screens)
+                    if (/iPhone/i.test(navigator.userAgent)) {
+                        this.camera.fov = CONFIG.camera.iPhoneFOV;
+                        this.camera.position.z = -4; // Move camera back slightly
+                    }
+                } else {
+                    this.camera.fov = CONFIG.camera.defaultFOV;
+                }
+                
+                // Enhanced touch controls for mobile
+                if (this.isMobile()) {
+                    this.setupMobileTouchControls();
+                }
+            }
+            
+            setupMobileTouchControls() {
+                let lastTouchX = 0;
+                let lastTouchY = 0;
+                let isTouching = false;
+                let touchStartDistance = 0;
+                let initialFOV = this.camera.fov;
+                
+                this.canvas.addEventListener('touchstart', (e) => {
+                    e.preventDefault();
+                    
+                    if (e.touches.length === 1) {
+                        // Single touch - show UI
+                        isTouching = true;
+                        lastTouchX = e.touches[0].clientX;
+                        lastTouchY = e.touches[0].clientY;
+                        this.showUI();
+                    } else if (e.touches.length === 2) {
+                        // Two finger touch - prepare for camera control
+                        isTouching = true;
+                        const touch1 = e.touches[0];
+                        const touch2 = e.touches[1];
+                        touchStartDistance = Math.sqrt(
+                            Math.pow(touch2.clientX - touch1.clientX, 2) +
+                            Math.pow(touch2.clientY - touch1.clientY, 2)
+                        );
+                        
+                        lastTouchX = (touch1.clientX + touch2.clientX) / 2;
+                        lastTouchY = (touch1.clientY + touch2.clientY) / 2;
+                    }
+                });
+                
+                this.canvas.addEventListener('touchmove', (e) => {
+                    e.preventDefault();
+                    
+                    if (!isTouching) return;
+                    
+                    if (e.touches.length === 2) {
+                        // Two finger controls - INCREASED SENSITIVITY
+                        const touch1 = e.touches[0];
+                        const touch2 = e.touches[1];
+                        
+                        // Calculate center point for rotation
+                        const centerX = (touch1.clientX + touch2.clientX) / 2;
+                        const centerY = (touch1.clientY + touch2.clientY) / 2;
+                        
+                        // Camera rotation with MUCH higher sensitivity
+                        const deltaX = (centerX - lastTouchX) * 0.9; // Increased for faster response
+                        const deltaY = (centerY - lastTouchY) * 0.9; // Increased for faster response
+                        
+                        if (Math.abs(deltaX) > 0.001 || Math.abs(deltaY) > 0.001) {
+                            this.camera.alpha -= deltaX;
+                            this.camera.beta = Math.max(0.1, Math.min(Math.PI - 0.1, this.camera.beta + deltaY));
+                        }
+                        
+                        // Pinch to zoom
+                        const currentDistance = Math.sqrt(
+                            Math.pow(touch2.clientX - touch1.clientX, 2) +
+                            Math.pow(touch2.clientY - touch1.clientY, 2)
+                        );
+                        
+                        if (touchStartDistance > 0) {
+                            const zoomFactor = currentDistance / touchStartDistance;
+                            const newFOV = initialFOV / zoomFactor;
+                            this.camera.fov = Math.max(0.3, Math.min(1.5, newFOV));
+                        }
+                        
+                        lastTouchX = centerX;
+                        lastTouchY = centerY;
+                    }
+                });
+                
+                this.canvas.addEventListener('touchend', (e) => {
+                    if (e.touches.length === 0) {
+                        isTouching = false;
+                        initialFOV = this.camera.fov;
+                    } else if (e.touches.length === 1) {
+                        // Reset for single touch
+                        lastTouchX = e.touches[0].clientX;
+                        lastTouchY = e.touches[0].clientY;
+                    }
+                });
+            }
+            
+            initGyroscope() {
+                // Check if device orientation is supported
+                if (!('DeviceOrientationEvent' in window)) {
+                    return;
+                }
+                
+                this.gyroSupported = true;
+                
+                // Check if we're on iOS and need permission
+                if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+                    // iOS 13+ requires permission
+                    this.showGyroPermissionButton();
+                } else {
+                    // Android or older iOS - start immediately if mobile
+                    if (this.isMobile()) {
+                        this.startGyroscope();
+                    }
+                }
+            }
+            
+            showGyroPermissionButton() {
+                if (this.isMobile()) {
+                    const permissionBtn = document.getElementById('gyroPermission');
+                    permissionBtn.classList.add('show');
+                    
+                    // Auto-hide after duration from CONFIG
+                    setTimeout(() => {
+                        permissionBtn.classList.remove('show');
+                    }, CONFIG.ui.gyroPermissionDuration);
+                }
+            }
+            
+            async requestGyroPermission() {
+                try {
+                    const permission = await DeviceOrientationEvent.requestPermission();
+                    if (permission === 'granted') {
+                        this.startGyroscope();
+                        document.getElementById('gyroPermission').classList.remove('show');
+                        this.log('Gyroscope enabled');
+                    } else {
+                        this.log('Gyroscope permission denied');
+                    }
+                } catch (error) {
+                    this.log('Error requesting gyroscope permission');
+                    console.error(error);
+                }
+            }
+            
+            startGyroscope() {
+                if (!this.gyroSupported || this.gyroEnabled) return;
+                
+                this.gyroEnabled = true;
+                
+                // Auto-calibrate by setting initial orientation as neutral
+                if (CONFIG.gyroscope.autoCalibrate) {
+                    setTimeout(() => {
+                        this.calibrateGyro();
+                    }, 1000); // Wait 1 second for stable reading
+                }
+                
+                window.addEventListener('deviceorientation', (event) => {
+                    this.handleGyroscope(event);
+                });
+                
+                this.log('Gyroscope active: Look around + tilt L/R to zoom!');
+            }
+            
+            calibrateGyro() {
+                // Set current orientation as the neutral position
+                this.calibratedOrientation = {
+                    alpha: this.lastOrientation.alpha,
+                    beta: this.lastOrientation.beta,
+                    gamma: this.lastOrientation.gamma
+                };
+                this.log('Gyroscope calibrated to current position');
+            }
+            
+            handleGyroscope(event) {
+                if (!this.gyroEnabled || !event.alpha) return;
+                
+                // Apply exponential smoothing
+                this.lastOrientation.alpha = this.lastOrientation.alpha * this.smoothing + (event.alpha || 0) * (1 - this.smoothing);
+                this.lastOrientation.beta = this.lastOrientation.beta * this.smoothing + (event.beta || 0) * (1 - this.smoothing);
+                this.lastOrientation.gamma = this.lastOrientation.gamma * this.smoothing + (event.gamma || 0) * (1 - this.smoothing);
+                
+                // Calculate relative orientation (subtract calibrated neutral position)
+                const relativeAlpha = this.lastOrientation.alpha - this.calibratedOrientation.alpha;
+                const relativeBeta = this.lastOrientation.beta - this.calibratedOrientation.beta;
+                const relativeGamma = this.lastOrientation.gamma - this.calibratedOrientation.gamma;
+                
+                // Convert to radians
+                const alpha = relativeAlpha * Math.PI / 180;
+                const beta = relativeBeta * Math.PI / 180;
+                const gamma = relativeGamma * Math.PI / 180;
+                
+                // Apply dead zone (ignore tiny movements)
+                const filteredAlpha = Math.abs(alpha) > this.gyroDeadZone ? alpha : 0;
+                const filteredBeta = Math.abs(beta) > this.gyroDeadZone ? beta : 0;
+                const filteredGamma = Math.abs(gamma) > this.gyroDeadZone ? gamma : 0;
+                
+                // Apply rotation with HIGH sensitivity
+                this.camera.rotation.y = -filteredAlpha * this.gyroSensitivity;
+                this.camera.rotation.x = Math.max(
+                    -CONFIG.gyroscope.maxRotationX, 
+                    Math.min(CONFIG.gyroscope.maxRotationX, filteredBeta * this.gyroSensitivity)
+                );
+                
+                // Gamma-based zoom control (tilt left/right to zoom in/out)
+                if (Math.abs(filteredGamma) > this.gyroDeadZone) {
+                    const newFOV = this.camera.fov + filteredGamma * this.zoomSensitivity;
+                    this.camera.fov = Math.max(CONFIG.camera.minFOV, Math.min(CONFIG.camera.maxFOV, newFOV));
+                }
+                
+                // Debug output (if enabled)
+                if (CONFIG.debug.showGyroValues) {
+                    console.log(`Gyro: α=${relativeAlpha.toFixed(1)}° β=${relativeBeta.toFixed(1)}° γ=${relativeGamma.toFixed(1)}° FOV=${this.camera.fov.toFixed(2)}`);
+                }
+            }
+            
+            setupOrientationDetection() {
+                // Detect orientation changes
+                window.addEventListener('orientationchange', () => {
+                    setTimeout(() => {
+                        this.handleOrientationChange();
+                    }, 500); // Delay to ensure orientation has changed
+                });
+                
+                // Initial check
+                this.handleOrientationChange();
+            }
+            
+            handleOrientationChange() {
+                if (!this.isMobile()) return;
+                
+                const orientationHint = document.getElementById('orientationHint');
+                
+                // Check if in portrait orientation
+                const isPortrait = window.innerHeight > window.innerWidth;
+                
+                if (isPortrait) {
+                    orientationHint.classList.add('show');
+                    // Auto-hide hint after duration from CONFIG
+                    setTimeout(() => {
+                        orientationHint.classList.remove('show');
+                    }, CONFIG.ui.orientationHintDuration);
+                } else {
+                    orientationHint.classList.remove('show');
+                }
+                
+                // Resize engine
+                setTimeout(() => {
+                    this.engine.resize();
+                }, 100);
+            }
+            
+            setDefaultCameraPosition() {
+                if (this.artworks.length > 0) {
+                    const firstArtwork = this.artworks[0];
+                    const pos = firstArtwork.position.pos;
+                    
+                    // Position camera to face first artwork
+                    if (Math.abs(pos.z - 9.8) < 0.1) { // Back wall
+                        this.camera.position.set(pos.x, pos.y, pos.z - 3);
+                    } else if (Math.abs(pos.x + 9.8) < 0.1) { // Left wall
+                        this.camera.position.set(pos.x + 3, pos.y, pos.z);
+                    } else if (Math.abs(pos.x - 9.8) < 0.1) { // Right wall
+                        this.camera.position.set(pos.x - 3, pos.y, pos.z);
+                    }
+                    
+                    this.camera.setTarget(pos);
+                    this.log(`Viewing first artwork`);
+                }
+            }
+            
+            setupLighting() {
+                this.ambientLight = new BABYLON.HemisphericLight('ambient', 
+                    new BABYLON.Vector3(0, 1, 0), this.scene);
+                this.ambientLight.intensity = CONFIG.lighting.ambient.normal;
+                
+                this.directionalLight = new BABYLON.DirectionalLight('directional',
+                    new BABYLON.Vector3(0, -1, 0.5), this.scene);
+                this.directionalLight.intensity = CONFIG.lighting.directional.normal;
+                
+                this.spotLights = [];
+            }
+            
+            createGallery() {
+                // Floor using CONFIG colors
+                const floor = BABYLON.MeshBuilder.CreateGround('floor', 
+                    { width: CONFIG.gallery.wallWidth, height: CONFIG.gallery.wallWidth }, this.scene);
+                const floorMat = new BABYLON.StandardMaterial('floorMat', this.scene);
+                floorMat.diffuseColor = new BABYLON.Color3(...CONFIG.colors.floor);
+                floor.material = floorMat;
+                
+                this.createWalls();
+            }
+            
+            createWalls() {
+                const wallHeight = CONFIG.gallery.wallHeight;
+                const wallWidth = CONFIG.gallery.wallWidth;
+                
+                const backWall = BABYLON.MeshBuilder.CreateBox('backWall',
+                    { width: wallWidth, height: wallHeight, depth: 0.2 }, this.scene);
+                backWall.position = new BABYLON.Vector3(0, wallHeight/2, 10);
+                
+                const leftWall = BABYLON.MeshBuilder.CreateBox('leftWall',
+                    { width: 0.2, height: wallHeight, depth: wallWidth }, this.scene);
+                leftWall.position = new BABYLON.Vector3(-10, wallHeight/2, 0);
+                
+                const rightWall = BABYLON.MeshBuilder.CreateBox('rightWall',
+                    { width: 0.2, height: wallHeight, depth: wallWidth }, this.scene);
+                rightWall.position = new BABYLON.Vector3(10, wallHeight/2, 0);
+                
+                const wallMat = new BABYLON.StandardMaterial('wallMat', this.scene);
+                wallMat.diffuseColor = new BABYLON.Color3(...CONFIG.colors.walls);
+                
+                [backWall, leftWall, rightWall].forEach(wall => {
+                    wall.material = wallMat;
+                });
+            }
+            
+            setupArtworkPositions() {
+                this.artworkPositions = [
+                    // Back wall
+                    { pos: new BABYLON.Vector3(-6, 2, 9.8), rot: new BABYLON.Vector3(0, 0, 0) },
+                    { pos: new BABYLON.Vector3(-2, 2, 9.8), rot: new BABYLON.Vector3(0, 0, 0) },
+                    { pos: new BABYLON.Vector3(2, 2, 9.8), rot: new BABYLON.Vector3(0, 0, 0) },
+                    { pos: new BABYLON.Vector3(6, 2, 9.8), rot: new BABYLON.Vector3(0, 0, 0) },
+                    
+                    // Left wall
+                    { pos: new BABYLON.Vector3(-9.8, 2, 6), rot: new BABYLON.Vector3(0, Math.PI/2, 0) },
+                    { pos: new BABYLON.Vector3(-9.8, 2, 2), rot: new BABYLON.Vector3(0, Math.PI/2, 0) },
+                    { pos: new BABYLON.Vector3(-9.8, 2, -2), rot: new BABYLON.Vector3(0, Math.PI/2, 0) },
+                    { pos: new BABYLON.Vector3(-9.8, 2, -6), rot: new BABYLON.Vector3(0, Math.PI/2, 0) },
+                    
+                    // Right wall
+                    { pos: new BABYLON.Vector3(9.8, 2, 6), rot: new BABYLON.Vector3(0, -Math.PI/2, 0) },
+                    { pos: new BABYLON.Vector3(9.8, 2, 2), rot: new BABYLON.Vector3(0, -Math.PI/2, 0) },
+                    { pos: new BABYLON.Vector3(9.8, 2, -2), rot: new BABYLON.Vector3(0, -Math.PI/2, 0) },
+                    { pos: new BABYLON.Vector3(9.8, 2, -6), rot: new BABYLON.Vector3(0, -Math.PI/2, 0) }
+                ];
+            }
+            
+            setupFileUpload() {
+                const fileInput = document.getElementById('fileInput');
+                
+                fileInput.addEventListener('change', (e) => {
+                    if (e.target.files.length > 0) {
+                        this.handleFiles(Array.from(e.target.files));
+                        this.hideUpload();
+                    }
+                });
+            }
+            
+            showUpload() {
+                document.getElementById('uploadModal').classList.add('show');
+            }
+            
+            hideUpload() {
+                document.getElementById('uploadModal').classList.remove('show');
+                // Clear form
+                document.getElementById('authorInput').value = '';
+                document.getElementById('descriptionInput').value = '';
+            }
+            
+            selectFiles() {
+                document.getElementById('fileInput').click();
+            }
+            
+            handleFiles(files) {
+                this.log(`Processing ${files.length} files...`);
+                
+                const validFiles = files.filter(file => {
+                    if (!file.type.match('image/(jpeg|jpg|png)')) {
+                        this.log(`Skipped ${file.name}: Invalid format`);
+                        return false;
+                    }
+                    if (file.size > 5 * 1024 * 1024) {
+                        this.log(`Skipped ${file.name}: Too large`);
+                        return false;
+                    }
+                    return true;
+                });
+                
+                validFiles.forEach((file, index) => {
+                    setTimeout(() => this.loadImage(file), index * 200);
+                });
+            }
+            
+            loadImage(file) {
+                const reader = new FileReader();
+                
+                reader.onload = (e) => {
+                    const author = document.getElementById('authorInput').value.trim() || 'Unknown Artist';
+                    const description = document.getElementById('descriptionInput').value.trim() || '';
+                    
+                    this.createArtwork(file.name, e.target.result, author, description);
+                };
+                
+                reader.onerror = () => {
+                    this.log(`Failed to load ${file.name}`);
+                };
+                
+                reader.readAsDataURL(file);
+            }
+            
+            createArtwork(name, dataURL, author, description) {
+                // Check if we need a new room
+                const currentRoomArtworks = this.artworks.filter(art => art.room === this.currentRoom);
+                if (currentRoomArtworks.length >= this.maxArtworksPerRoom) {
+                    this.currentRoom++;
+                    this.log(`Room ${this.currentRoom - 1} full. Creating Room ${this.currentRoom}`);
+                }
+                
+                const totalArtworks = this.artworks.length;
+                const positionIndex = totalArtworks % this.maxArtworksPerRoom;
+                
+                if (positionIndex >= this.artworkPositions.length) {
+                    this.log('No more wall positions available');
+                    return;
+                }
+                
+                try {
+                    const position = this.artworkPositions[positionIndex];
+                    
+                    // Create plane using CONFIG dimensions
+                    const plane = BABYLON.MeshBuilder.CreatePlane(`artwork_${totalArtworks}`, 
+                        { width: CONFIG.gallery.artworkWidth, height: CONFIG.gallery.artworkHeight }, this.scene);
+                    
+                    // Offset position for different rooms using CONFIG spacing
+                    const roomOffset = (this.currentRoom - 1) * CONFIG.gallery.roomSpacing;
+                    const adjustedPos = position.pos.clone();
+                    adjustedPos.z += roomOffset;
+                    
+                    plane.position = adjustedPos;
+                    plane.rotation = position.rot.clone();
+                    
+                    // Create texture and material
+                    const texture = new BABYLON.Texture(dataURL, this.scene);
+                    const material = new BABYLON.StandardMaterial(`mat_${totalArtworks}`, this.scene);
+                    
+                    material.diffuseTexture = texture;
+                    material.emissiveTexture = texture;
+                    material.emissiveColor = new BABYLON.Color3(...CONFIG.colors.artworkEmissive);
+                    material.backFaceCulling = false;
+                    
+                    plane.material = material;
+                    
+                    // Create spotlight
+                    const spotlightPos = adjustedPos.clone();
+                    spotlightPos.y += 1;
+                    spotlightPos.z -= 1;
+                    
+                    const spotlight = new BABYLON.SpotLight(`spot_${totalArtworks}`,
+                        spotlightPos,
+                        new BABYLON.Vector3(0, -0.5, 0.5),
+                        Math.PI/4, 2, this.scene);
+                    spotlight.intensity = CONFIG.lighting.spotlight.normal;
+                    this.spotLights.push(spotlight);
+                    
+                    const artworkData = {
+                        mesh: plane,
+                        name: name,
+                        author: author,
+                        description: description,
+                        material: material,
+                        texture: texture,
+                        spotlight: spotlight,
+                        position: { pos: adjustedPos, rot: position.rot },
+                        room: this.currentRoom,
+                        timestamp: new Date().toISOString()
+                    };
+                    
+                    this.artworks.push(artworkData);
+                    
+                    // Save to IndexedDB for persistence
+                    this.saveArtwork({
+                        name: name,
+                        author: author,
+                        description: description,
+                        dataURL: dataURL,
+                        room: this.currentRoom,
+                        positionIndex: positionIndex,
+                        timestamp: artworkData.timestamp
+                    });
+                    
+                    this.updateUI();
+                    this.log(`Added: ${name} by ${author}`);
+                    
+                    // Set camera to face first artwork if this is the first one
+                    if (this.artworks.length === 1) {
+                        setTimeout(() => this.setDefaultCameraPosition(), 500);
+                    }
+                    
+                } catch (error) {
+                    this.log(`Error creating ${name}: ${error.message}`);
+                }
+            }
+            
+            restoreArtwork(data) {
+                try {
+                    const position = this.artworkPositions[data.positionIndex];
+                    
+                    const plane = BABYLON.MeshBuilder.CreatePlane(`artwork_${this.artworks.length}`, 
+                        { width: CONFIG.gallery.artworkWidth, height: CONFIG.gallery.artworkHeight }, this.scene);
+                    
+                    const roomOffset = (data.room - 1) * CONFIG.gallery.roomSpacing;
+                    const adjustedPos = position.pos.clone();
+                    adjustedPos.z += roomOffset;
+                    
+                    plane.position = adjustedPos;
+                    plane.rotation = position.rot.clone();
+                    
+                    const texture = new BABYLON.Texture(data.dataURL, this.scene);
+                    const material = new BABYLON.StandardMaterial(`mat_${this.artworks.length}`, this.scene);
+                    
+                    material.diffuseTexture = texture;
+                    material.emissiveTexture = texture;
+                    material.emissiveColor = new BABYLON.Color3(...CONFIG.colors.artworkEmissive);
+                    material.backFaceCulling = false;
+                    
+                    plane.material = material;
+                    
+                    const spotlightPos = adjustedPos.clone();
+                    spotlightPos.y += 1;
+                    spotlightPos.z -= 1;
+                    
+                    const spotlight = new BABYLON.SpotLight(`spot_${this.artworks.length}`,
+                        spotlightPos,
+                        new BABYLON.Vector3(0, -0.5, 0.5),
+                        Math.PI/4, 2, this.scene);
+                    spotlight.intensity = CONFIG.lighting.spotlight.normal;
+                    this.spotLights.push(spotlight);
+                    
+                    this.artworks.push({
+                        mesh: plane,
+                        name: data.name,
+                        author: data.author,
+                        description: data.description,
+                        material: material,
+                        texture: texture,
+                        spotlight: spotlight,
+                        position: { pos: adjustedPos, rot: position.rot },
+                        room: data.room,
+                        timestamp: data.timestamp
+                    });
+                    
+                    this.currentRoom = Math.max(this.currentRoom, data.room);
+                    this.updateUI();
+                    
+                } catch (error) {
+                    this.log(`Error restoring ${data.name}: ${error.message}`);
+                }
+            }
+            
+            updateUI() {
+                document.getElementById('artCount').textContent = `${this.artworks.length} artworks`;
+                
+                const maxRoom = Math.max(...this.artworks.map(art => art.room), 1);
+                document.getElementById('roomInfo').textContent = `Room ${this.currentRoom}/${maxRoom}`;
+                
+                const nextRoomBtn = document.getElementById('nextRoomBtn');
+                if (maxRoom > 1) {
+                    nextRoomBtn.style.display = 'block';
+                } else {
+                    nextRoomBtn.style.display = 'none';
+                }
+                
+                // Show gyro toggle and calibrate if supported and on mobile
+                const gyroToggle = document.getElementById('gyroToggle');
+                const gyroCalibrate = document.getElementById('gyroCalibrate');
+                if (this.gyroSupported && this.isMobile()) {
+                    gyroToggle.style.display = 'block';
+                    gyroToggle.textContent = `Gyro: ${this.gyroEnabled ? 'ON' : 'OFF'}`;
+                    
+                    // Show calibrate button only when gyro is enabled
+                    if (this.gyroEnabled) {
+                        gyroCalibrate.style.display = 'block';
+                    } else {
+                        gyroCalibrate.style.display = 'none';
+                    }
+                } else {
+                    gyroToggle.style.display = 'none';
+                    gyroCalibrate.style.display = 'none';
+                }
+                
+                if (this.artworks.length > 0) {
+                    const current = this.artworks[this.currentArtIndex];
+                    document.getElementById('artTitle').textContent = `"${current.name}" by ${current.author}`;
+                } else {
+                    document.getElementById('artTitle').textContent = 'Virtual Gallery';
+                }
+            }
+            
+            // Control methods
+            resetCamera() {
+                if (this.artworks.length > 0) {
+                    this.setDefaultCameraPosition();
+                } else {
+                    this.camera.position = new BABYLON.Vector3(0, 1.6, -3);
+                    this.camera.setTarget(BABYLON.Vector3.Zero());
+                }
+                this.currentArtIndex = 0;
+                this.log('Camera reset');
+                this.updateUI();
+                this.showUI();
+            }
+            
+            toggleLighting() {
+                switch (this.lightingMode) {
+                    case 'normal':
+                        this.lightingMode = 'bright';
+                        this.ambientLight.intensity = CONFIG.lighting.ambient.bright;
+                        this.directionalLight.intensity = CONFIG.lighting.directional.bright;
+                        this.spotLights.forEach(light => light.intensity = CONFIG.lighting.spotlight.bright);
+                        break;
+                    case 'bright':
+                        this.lightingMode = 'dim';
+                        this.ambientLight.intensity = CONFIG.lighting.ambient.dim;
+                        this.directionalLight.intensity = CONFIG.lighting.directional.dim;
+                        this.spotLights.forEach(light => light.intensity = CONFIG.lighting.spotlight.dim);
+                        break;
+                    case 'dim':
+                        this.lightingMode = 'normal';
+                        this.ambientLight.intensity = CONFIG.lighting.ambient.normal;
+                        this.directionalLight.intensity = CONFIG.lighting.directional.normal;
+                        this.spotLights.forEach(light => light.intensity = CONFIG.lighting.spotlight.normal);
+                        break;
+                }
+                this.log(`Lighting: ${this.lightingMode}`);
+                this.showUI();
+            }
+            
+            toggleGyro() {
+                if (!this.gyroSupported) {
+                    this.log('Gyroscope not supported');
+                    return;
+                }
+                
+                if (this.gyroEnabled) {
+                    this.gyroEnabled = false;
+                    this.log('Gyroscope disabled');
+                } else {
+                    // Check if we need permission (iOS)
+                    if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+                        this.requestGyroPermission();
+                    } else {
+                        this.startGyroscope();
+                    }
+                }
+                
+                this.updateUI();
+                this.showUI();
+            }
+            
+            // Manual gyroscope calibration method
+            recalibrateGyro() {
+                if (this.gyroEnabled) {
+                    this.calibrateGyro();
+                    this.log('Gyroscope recalibrated');
+                } else {
+                    this.log('Enable gyroscope first');
+                }
+                this.showUI();
+            }
+            
+            nextArtwork() {
+                if (this.artworks.length === 0) {
+                    this.log('No artworks to view');
+                    this.showUI();
+                    return;
+                }
+                
+                this.currentArtIndex = (this.currentArtIndex + 1) % this.artworks.length;
+                const artwork = this.artworks[this.currentArtIndex];
+                
+                const pos = artwork.position.pos;
+                const offset = new BABYLON.Vector3();
+                
+                if (Math.abs(pos.z - 9.8 - (artwork.room - 1) * CONFIG.gallery.roomSpacing) < 0.1) { // Back wall
+                    offset.set(pos.x, pos.y, pos.z - 3);
+                } else if (Math.abs(pos.x + 9.8) < 0.1) { // Left wall
+                    offset.set(pos.x + 3, pos.y, pos.z);
+                } else if (Math.abs(pos.x - 9.8) < 0.1) { // Right wall
+                    offset.set(pos.x - 3, pos.y, pos.z);
+                }
+                
+                this.camera.position = offset;
+                this.camera.setTarget(pos);
+                
+                this.log(`Viewing: "${artwork.name}" by ${artwork.author} (${this.currentArtIndex + 1}/${this.artworks.length})`);
+                this.updateUI();
+                this.showUI();
+            }
+            
+            nextRoom() {
+                const maxRoom = Math.max(...this.artworks.map(art => art.room), 1);
+                if (maxRoom <= 1) {
+                    this.log('Only one room available');
+                    this.showUI();
+                    return;
+                }
+                
+                const targetRoom = (this.currentRoom % maxRoom) + 1;
+                const roomArtworks = this.artworks.filter(art => art.room === targetRoom);
+                
+                if (roomArtworks.length > 0) {
+                    const firstArtwork = roomArtworks[0];
+                    const pos = firstArtwork.position.pos;
+                    
+                    this.camera.position.set(pos.x, pos.y, pos.z - 3);
+                    this.camera.setTarget(pos);
+                    
+                    this.currentRoom = targetRoom;
+                    this.log(`Moved to Room ${targetRoom}`);
+                    this.updateUI();
+                    this.showUI();
+                }
+            }
+            
+            async clearGallery() {
+                this.artworks.forEach(artwork => {
+                    artwork.mesh.dispose();
+                    artwork.material.dispose();
+                    artwork.texture.dispose();
+                    artwork.spotlight.dispose();
+                });
+                
+                this.artworks = [];
+                this.spotLights = [];
+                this.currentArtIndex = 0;
+                this.currentRoom = 1;
+                
+                await this.clearStoredArtworks();
+                
+                this.log('Gallery cleared');
+                this.updateUI();
+                this.showUI();
+            }
+        }
+        
+        // Initialize
+        let app;
+        window.addEventListener('DOMContentLoaded', () => {
+            app = new MultiArtworkGallery();
+        });
+    </script>
+</body>
+</html>
