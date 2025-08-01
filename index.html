@@ -7,7 +7,7 @@
     <meta name="theme-color" content="#000000">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <title>GAF Multi-Artwork Virtual Gallery</title>
+    <title>GAF Enhanced Virtual Gallery</title>
     
     <!-- Babylon.js CDN -->
     <script src="https://unpkg.com/babylonjs@6.37.1/babylon.js"></script>
@@ -155,6 +155,24 @@
         
         .info-separator {
             opacity: 0.4;
+        }
+        
+        .default-badge {
+            background: rgba(255, 215, 0, 0.8);
+            color: #000;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 9px;
+            font-weight: bold;
+        }
+        
+        .user-badge {
+            background: rgba(0, 255, 0, 0.8);
+            color: #000;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 9px;
+            font-weight: bold;
         }
         
         .upload-modal {
@@ -388,13 +406,15 @@
         <div class="controls" id="controls">
             <h3>Gallery</h3>
             <button onclick="app.showUpload()">Upload Art</button>
-            <button onclick="app.resetCamera()">Reset</button>
+            <button onclick="app.resetCamera()">Reset View</button>
             <button onclick="app.toggleLighting()">Toggle Lighting</button>
             <button onclick="app.toggleGyro()" id="gyroToggle" style="display:none">Gyro: OFF</button>
             <button onclick="app.recalibrateGyro()" id="gyroCalibrate" style="display:none">Calibrate</button>
             <button onclick="app.nextArtwork()">Next Art</button>
             <button onclick="app.nextRoom()" id="nextRoomBtn" style="display:none">Next Room</button>
-            <button onclick="app.clearGallery()">Clear Gallery</button>
+            <button onclick="app.clearUserArt()">Clear User Art</button>
+            <button onclick="app.resetToDefaults()">Reset All</button>
+            <button onclick="app.debugTextures()">Debug</button>
         </div>
         
         <div class="info" id="info">
@@ -406,7 +426,7 @@
         </div>
         
         <div class="upload-modal" id="uploadModal">
-            <h4>Upload Artwork</h4>
+            <h4>Upload Your Artwork</h4>
             <div class="upload-fields">
                 <input type="text" id="authorInput" placeholder="Artist name (optional)">
                 <textarea id="descriptionInput" placeholder="Description (optional)"></textarea>
@@ -415,7 +435,7 @@
                 <button class="btn-secondary" onclick="app.hideUpload()">Cancel</button>
                 <button class="btn-primary" onclick="app.selectFiles()">Choose Images</button>
             </div>
-            <input type="file" id="fileInput" accept="image/jpeg,image/jpg,image/png" multiple>
+            <input type="file" id="fileInput" accept="image/jpeg,image/jpg,image/png,image/webp,image/gif" multiple>
         </div>
         
         <div class="notification" id="notification"></div>
@@ -436,14 +456,39 @@
 
     <script>
         // ========================================
-        // CONFIGURATION SETTINGS
+        // DEFAULT ARTWORKS CONFIGURATION
         // ========================================
-        // Edit these values to customize the gallery without modifying code:
-        // - Increase/decrease gyroscope.sensitivity for more/less responsive controls
-        // - Change colors.walls/floor to customize appearance  
-        // - Adjust camera.mobileFOV/iPhoneFOV for better mobile zoom
-        // - Modify lighting intensities for different moods
-        // - Set debug.showGyroValues = true to see live gyro data in console
+        
+        let DEFAULT_ARTWORKS = [];
+        
+        async function loadDefaultArtworksManifest() {
+            console.log('🔍 Attempting to load manifest from: /gallery/defaults/manifest.json');
+
+            try {
+                const response = await fetch('/gallery/defaults/manifest.json');
+                console.log('📡 Response status:', response.status, response.statusText);
+
+                if (!response.ok) {
+                    console.warn('❌ No manifest.json found, using empty defaults');
+                    console.warn('📂 Make sure file exists at: gallery/defaults/manifest.json');
+                    return [];
+                }
+
+                const data = await response.json();
+                console.log('📄 Loaded manifest data:', data);
+                console.log('🎨 Number of artworks found:', data.artworks ? data.artworks.length : 0);
+
+                return data.artworks || [];
+
+            } catch (error) {
+                console.error('💥 Error loading manifest.json:', error);
+                console.error('📂 Check if file exists and has correct JSON format');
+                return [];
+            }
+        }
+                
+        // ========================================
+        // ENHANCED CONFIGURATION 
         // ========================================
         const CONFIG = {
             // Gallery Settings
@@ -452,36 +497,49 @@
                 roomSpacing: 25,
                 artworkWidth: 3,
                 artworkHeight: 2,
+                maxArtworkHeight: 3.5,     // NEW: Max height to fit wall
                 wallHeight: 4,
-                wallWidth: 20
+                wallWidth: 20,
+                defaultArtFolder: "/gallery/defaults/"
+            },
+            
+            // Collision Settings - NEW
+            collision: {
+                enabled: true,
+                cameraEllipsoid: [0.5, 0.9, 0.5],    // Player size (width, height, depth)
+                gravity: [0, -9.81, 0],               // Earth-like gravity
+                applyGravity: true
             },
             
             // Gyroscope Settings
             gyroscope: {
-                sensitivity: 0.15,          // MUCH higher sensitivity (was 0.01)
-                smoothing: 0.7,             // Less smoothing for more responsiveness
-                maxRotationX: Math.PI/2,    // Limit up/down looking
-                deadZone: 2,                // Ignore small movements (degrees)
-                zoomSensitivity: 0.008,     // Gamma-based zoom control
-                autoCalibrate: true         // Auto-calibrate on start
+                sensitivity: 0.15,          
+                smoothing: 0.7,             
+                maxRotationX: Math.PI/2,    
+                deadZone: 2,                
+                zoomSensitivity: 0.008,     
+                autoCalibrate: true,
+                syncWithTouch: true         // NEW: Sync with touch controls
             },
             
             // Camera Settings
             camera: {
-                defaultFOV: 0.8,           // Desktop default
-                mobileFOV: 1.2,            // Mobile default
-                iPhoneFOV: 1.4,            // iPhone specific
+                defaultFOV: 0.8,           
+                mobileFOV: 1.2,            
+                iPhoneFOV: 1.4,            
                 speed: 1.0,
                 minFOV: 0.3,
-                maxFOV: 1.8
+                maxFOV: 1.8,
+                initialBackDistance: 6,
+                touchSensitivity: 0.003     // NEW: Touch rotation sensitivity
             },
             
             // Visual Settings
             colors: {
-                floor: [0.2, 0.2, 0.2],           // Dark gray floor
-                walls: [0.9, 0.9, 0.9],           // Light gray walls
-                artworkEmissive: [0.3, 0.3, 0.3], // Artwork glow
-                background: [0, 0, 0]              // Black background
+                floor: [0.2, 0.2, 0.2],           
+                walls: [0.9, 0.9, 0.9],           
+                artworkEmissive: [0.3, 0.3, 0.3], 
+                background: [0, 0, 0]              
             },
             
             // Lighting Settings
@@ -505,21 +563,21 @@
             
             // UI Settings
             ui: {
-                autoHideDelay: 4000,        // Auto-hide UI after 4 seconds
-                notificationDuration: 3000,  // Notification display time
-                orientationHintDuration: 5000, // Rotation hint duration
-                gyroPermissionDuration: 8000   // Permission button duration
+                autoHideDelay: 4000,       
+                notificationDuration: 3000, 
+                orientationHintDuration: 5000,
+                gyroPermissionDuration: 8000   
             },
             
             // Debug Settings
             debug: {
-                showGyroValues: false,      // Show gyro values on screen
-                enableConsoleLog: true,     // Enable console logging
-                showFPS: false              // Show FPS counter
+                showGyroValues: false,      
+                enableConsoleLog: true,     
+                showFPS: false              
             }
         };
 
-        class MultiArtworkGallery {
+        class EnhancedMultiArtworkGallery {
             constructor() {
                 this.canvas = document.getElementById('canvas');
                 this.engine = null;
@@ -534,8 +592,9 @@
                 this.db = null;
                 this.uiTimer = null;
                 this.infoTimer = null;
+                this.defaultArtworksLoaded = 0;
                 
-                // Gyroscope properties (using CONFIG)
+                // Gyroscope properties
                 this.gyroEnabled = false;
                 this.gyroSupported = false;
                 this.lastOrientation = { alpha: 0, beta: 0, gamma: 0 };
@@ -543,7 +602,13 @@
                 this.smoothing = CONFIG.gyroscope.smoothing;
                 this.gyroSensitivity = CONFIG.gyroscope.sensitivity;
                 this.zoomSensitivity = CONFIG.gyroscope.zoomSensitivity;
-                this.gyroDeadZone = CONFIG.gyroscope.deadZone * Math.PI / 180; // Convert to radians
+                this.gyroDeadZone = CONFIG.gyroscope.deadZone * Math.PI / 180;
+                
+                // NEW: Touch-Gyro sync properties
+                this.touchRotation = { x: 0, y: 0 };
+                this.baseRotation = { x: 0, y: 0 };
+                this.isGyroActive = false;
+                this.isTouchActive = false;
                 
                 this.init();
             }
@@ -570,11 +635,9 @@
                 controls.classList.remove('hidden');
                 info.classList.remove('hidden');
                 
-                // Clear existing timers
                 clearTimeout(this.uiTimer);
                 clearTimeout(this.infoTimer);
                 
-                // Auto-hide after 4 seconds
                 this.uiTimer = setTimeout(() => {
                     controls.classList.add('hidden');
                 }, CONFIG.ui.autoHideDelay);
@@ -585,7 +648,6 @@
             }
             
             setupUIAutoHide() {
-                // Show UI on screen tap/click
                 this.canvas.addEventListener('click', () => {
                     this.showUI();
                 });
@@ -596,7 +658,6 @@
                     }
                 });
                 
-                // Keep UI visible on desktop hover
                 const controls = document.getElementById('controls');
                 const info = document.getElementById('info');
                 
@@ -622,6 +683,7 @@
                     this.scene = new BABYLON.Scene(this.engine);
                     
                     this.setupCamera();
+                    this.setupCollisionSystem();      // NEW
                     this.setupLighting();
                     this.createGallery();
                     this.setupArtworkPositions();
@@ -629,7 +691,14 @@
                     this.setupUIAutoHide();
                     this.initGyroscope();
                     this.setupOrientationDetection();
+                    this.setupMouseWheelZoom();
+                    this.setupEnhancedTouchControls(); // NEW
                     
+                    // LOAD DEFAULT ARTWORKS FIRST
+                    DEFAULT_ARTWORKS = await loadDefaultArtworksManifest();
+                    this.loadDefaultArtworks();
+                    
+                    // Then load user uploads
                     await this.loadStoredArtworks();
                     
                     this.engine.runRenderLoop(() => {
@@ -642,13 +711,12 @@
                     
                     document.getElementById('loading').style.display = 'none';
                     
-                    // Initial UI state
-                    this.updateUI(); // Update UI to show gyro button if supported
+                    this.updateUI();
                     setTimeout(() => {
                         this.showUI();
                     }, 500);
                     
-                    this.log('Gallery ready!');
+                    this.log(`Enhanced Gallery ready! Collision detection enabled.`);
                     
                 } catch (error) {
                     this.log(`Error: ${error.message}`);
@@ -656,9 +724,331 @@
                 }
             }
             
+            // NEW: Collision System Setup
+            setupCollisionSystem() {
+                if (!CONFIG.collision.enabled) return;
+                
+                // Enable global collision detection
+                this.scene.collisionsEnabled = true;
+                
+                // Set up gravity
+                this.scene.gravity = new BABYLON.Vector3(...CONFIG.collision.gravity);
+                
+                // Configure camera collision properties
+                this.camera.checkCollisions = true;
+                this.camera.applyGravity = CONFIG.collision.applyGravity;
+                
+                // Set camera ellipsoid (collision boundary)
+                this.camera.ellipsoid = new BABYLON.Vector3(...CONFIG.collision.cameraEllipsoid);
+                
+                this.log('Collision system enabled - no more walking through walls!');
+            }
+            
+            // Enhanced artwork loading with proportional sizing
+            loadDefaultArtworks() {
+                if (DEFAULT_ARTWORKS.length === 0) {
+                    this.log("No default artworks configured");
+                    return;
+                }
+                
+                this.log(`Loading ${DEFAULT_ARTWORKS.length} default artworks...`);
+                
+                DEFAULT_ARTWORKS.forEach((artwork, index) => {
+                    const imageURL = CONFIG.gallery.defaultArtFolder + artwork.filename;
+                    
+                    setTimeout(() => {
+                        this.createDefaultArtwork(
+                            artwork.name, 
+                            imageURL, 
+                            artwork.author, 
+                            artwork.description || "",
+                            index
+                        );
+                    }, index * 100);
+                });
+            }
+            
+            // NEW: Enhanced artwork creation with proportional sizing
+            createDefaultArtwork(name, imageURL, author, description, index) {
+                try {
+                    if (index >= this.artworkPositions.length) {
+                        this.log(`Skipping ${name}: No wall position available`);
+                        return;
+                    }
+                    
+                    const position = this.artworkPositions[index];
+                    
+                    // Create temporary image to get dimensions
+                    const img = new Image();
+                    img.onload = () => {
+                        const { width, height } = this.calculateProportionalSize(img.width, img.height);
+                        
+                        const plane = BABYLON.MeshBuilder.CreatePlane(`default_artwork_${index}`, 
+                            { width: width, height: height }, this.scene);
+                        
+                        plane.position = position.pos.clone();
+                        plane.rotation = position.rot.clone();
+                        
+                        const texture = new BABYLON.Texture(imageURL, this.scene);
+                        const material = new BABYLON.StandardMaterial(`default_mat_${index}`, this.scene);
+                        
+                        material.diffuseTexture = texture;
+                        material.emissiveTexture = texture;
+                        material.emissiveColor = new BABYLON.Color3(...CONFIG.colors.artworkEmissive);
+                        material.backFaceCulling = false;
+                        
+                        plane.material = material;
+                        
+                        // Add spotlight
+                        const spotlightPos = position.pos.clone();
+                        spotlightPos.y += 1;
+                        spotlightPos.z -= 1;
+                        
+                        const spotlight = new BABYLON.SpotLight(`default_spot_${index}`,
+                            spotlightPos,
+                            new BABYLON.Vector3(0, -0.5, 0.5),
+                            Math.PI/4, 2, this.scene);
+                        spotlight.intensity = CONFIG.lighting.spotlight.normal;
+                        this.spotLights.push(spotlight);
+                        
+                        const artworkData = {
+                            mesh: plane,
+                            name: name,
+                            author: author,
+                            description: description,
+                            material: material,
+                            texture: texture,
+                            spotlight: spotlight,
+                            position: { pos: position.pos.clone(), rot: position.rot.clone() },
+                            room: 1,
+                            isDefault: true,
+                            imageURL: imageURL,
+                            timestamp: new Date().toISOString(),
+                            originalDimensions: { width: img.width, height: img.height },
+                            displayDimensions: { width: width, height: height }
+                        };
+                        
+                        this.artworks.push(artworkData);
+                        this.defaultArtworksLoaded++;
+                        
+                        this.updateUI();
+                        
+                        if (this.artworks.length === 1) {
+                            setTimeout(() => this.positionNearFirstArtwork(), 500);
+                        }
+                    };
+                    
+                    img.onerror = () => {
+                        this.log(`Error loading default ${name}: Network error`);
+                    };
+                    
+                    img.src = imageURL;
+                    
+                } catch (error) {
+                    this.log(`Error loading default ${name}: ${error.message}`);
+                    console.error(error);
+                }
+            }
+            
+            // NEW: Calculate proportional artwork size
+            calculateProportionalSize(originalWidth, originalHeight) {
+                const maxWidth = CONFIG.gallery.artworkWidth;
+                const maxHeight = Math.min(CONFIG.gallery.artworkHeight, CONFIG.gallery.maxArtworkHeight);
+                
+                // Calculate aspect ratio
+                const aspectRatio = originalWidth / originalHeight;
+                
+                let width, height;
+                
+                if (aspectRatio > 1) {
+                    // Landscape orientation
+                    width = maxWidth;
+                    height = maxWidth / aspectRatio;
+                    
+                    // Ensure height doesn't exceed maximum
+                    if (height > maxHeight) {
+                        height = maxHeight;
+                        width = maxHeight * aspectRatio;
+                    }
+                } else {
+                    // Portrait or square orientation
+                    height = maxHeight;
+                    width = maxHeight * aspectRatio;
+                    
+                    // Ensure width doesn't exceed maximum
+                    if (width > maxWidth) {
+                        width = maxWidth;
+                        height = maxWidth / aspectRatio;
+                    }
+                }
+                
+                return { width, height };
+            }
+            
+            // NEW: Enhanced touch controls with gyro sync
+            setupEnhancedTouchControls() {
+                let lastTouchX = 0;
+                let lastTouchY = 0;
+                let isTouching = false;
+                let touchStartDistance = 0;
+                let initialFOV = this.camera.fov;
+                
+                this.canvas.addEventListener('touchstart', (e) => {
+                    e.preventDefault();
+                    
+                    if (e.touches.length === 1) {
+                        isTouching = true;
+                        this.isTouchActive = true;
+                        
+                        lastTouchX = e.touches[0].clientX;
+                        lastTouchY = e.touches[0].clientY;
+                        
+                        // Store current camera rotation as base when touch starts
+                        this.baseRotation.x = this.camera.rotation.x;
+                        this.baseRotation.y = this.camera.rotation.y;
+                        
+                        this.showUI();
+                    } else if (e.touches.length === 2) {
+                        isTouching = true;
+                        const touch1 = e.touches[0];
+                        const touch2 = e.touches[1];
+                        touchStartDistance = Math.sqrt(
+                            Math.pow(touch2.clientX - touch1.clientX, 2) +
+                            Math.pow(touch2.clientY - touch1.clientY, 2)
+                        );
+                        
+                        lastTouchX = (touch1.clientX + touch2.clientX) / 2;
+                        lastTouchY = (touch1.clientY + touch2.clientY) / 2;
+                    }
+                });
+                
+                this.canvas.addEventListener('touchmove', (e) => {
+                    e.preventDefault();
+                    
+                    if (!isTouching) return;
+                    
+                    if (e.touches.length === 1) {
+                        // Single touch - rotation
+                        const touch = e.touches[0];
+                        const deltaX = touch.clientX - lastTouchX;
+                        const deltaY = touch.clientY - lastTouchY;
+                        
+                        // Apply touch rotation
+                        this.touchRotation.x += deltaY * CONFIG.camera.touchSensitivity;
+                        this.touchRotation.y += deltaX * CONFIG.camera.touchSensitivity;
+                        
+                        // Clamp vertical rotation
+                        this.touchRotation.x = Math.max(
+                            -CONFIG.gyroscope.maxRotationX, 
+                            Math.min(CONFIG.gyroscope.maxRotationX, this.touchRotation.x)
+                        );
+                        
+                        // Apply to camera if not using gyro
+                        if (!this.gyroEnabled || !this.isGyroActive) {
+                            this.camera.rotation.x = this.baseRotation.x + this.touchRotation.x;
+                            this.camera.rotation.y = this.baseRotation.y + this.touchRotation.y;
+                        }
+                        
+                        lastTouchX = touch.clientX;
+                        lastTouchY = touch.clientY;
+                        
+                    } else if (e.touches.length === 2) {
+                        // Two finger pinch - zoom
+                        const touch1 = e.touches[0];
+                        const touch2 = e.touches[1];
+                        
+                        const currentDistance = Math.sqrt(
+                            Math.pow(touch2.clientX - touch1.clientX, 2) +
+                            Math.pow(touch2.clientY - touch1.clientY, 2)
+                        );
+                        
+                        if (touchStartDistance > 0) {
+                            const zoomFactor = currentDistance / touchStartDistance;
+                            const newFOV = initialFOV / zoomFactor;
+                            this.camera.fov = Math.max(CONFIG.camera.minFOV, Math.min(CONFIG.camera.maxFOV, newFOV));
+                        }
+                    }
+                });
+                
+                this.canvas.addEventListener('touchend', (e) => {
+                    if (e.touches.length === 0) {
+                        isTouching = false;
+                        this.isTouchActive = false;
+                        initialFOV = this.camera.fov;
+                        
+                        // Update base rotation when touch ends
+                        if (!this.gyroEnabled || !this.isGyroActive) {
+                            this.baseRotation.x = this.camera.rotation.x;
+                            this.baseRotation.y = this.camera.rotation.y;
+                        }
+                        
+                        // Reset touch rotation accumulator
+                        this.touchRotation.x = 0;
+                        this.touchRotation.y = 0;
+                        
+                    } else if (e.touches.length === 1) {
+                        lastTouchX = e.touches[0].clientX;
+                        lastTouchY = e.touches[0].clientY;
+                    }
+                });
+            }
+            
+            // Enhanced gyroscope handling with touch sync
+            handleGyroscope(event) {
+                if (!this.gyroEnabled || !event.alpha) return;
+                
+                this.isGyroActive = true;
+                
+                this.lastOrientation.alpha = this.lastOrientation.alpha * this.smoothing + (event.alpha || 0) * (1 - this.smoothing);
+                this.lastOrientation.beta = this.lastOrientation.beta * this.smoothing + (event.beta || 0) * (1 - this.smoothing);
+                this.lastOrientation.gamma = this.lastOrientation.gamma * this.smoothing + (event.gamma || 0) * (1 - this.smoothing);
+                
+                let relativeAlpha = this.lastOrientation.alpha - this.calibratedOrientation.alpha;
+
+                while (relativeAlpha > 180) relativeAlpha -= 360;
+                while (relativeAlpha < -180) relativeAlpha += 360;
+
+                const relativeBeta = this.lastOrientation.beta - this.calibratedOrientation.beta;
+                const relativeGamma = this.lastOrientation.gamma - this.calibratedOrientation.gamma;
+                
+                const alpha = relativeAlpha * Math.PI / 180;
+                const beta = relativeBeta * Math.PI / 180;
+                const gamma = relativeGamma * Math.PI / 180;
+                
+                const filteredAlpha = Math.abs(alpha) > this.gyroDeadZone ? alpha : 0;
+                const filteredBeta = Math.abs(beta) > this.gyroDeadZone ? beta : 0;
+                const filteredGamma = Math.abs(gamma) > this.gyroDeadZone ? gamma : 0;
+                
+                // NEW: Combine with touch rotation if sync enabled
+                if (CONFIG.gyroscope.syncWithTouch && !this.isTouchActive) {
+                    this.camera.rotation.y = this.baseRotation.y + this.touchRotation.y - filteredAlpha * this.gyroSensitivity;
+                    this.camera.rotation.x = Math.max(
+                        -CONFIG.gyroscope.maxRotationX, 
+                        Math.min(CONFIG.gyroscope.maxRotationX, 
+                                 this.baseRotation.x + this.touchRotation.x + filteredBeta * this.gyroSensitivity)
+                    );
+                } else if (!this.isTouchActive) {
+                    // Pure gyro mode
+                    this.camera.rotation.y = -filteredAlpha * this.gyroSensitivity;
+                    this.camera.rotation.x = Math.max(
+                        -CONFIG.gyroscope.maxRotationX, 
+                        Math.min(CONFIG.gyroscope.maxRotationX, filteredBeta * this.gyroSensitivity)
+                    );
+                }
+                
+                // Gamma for zoom (unchanged)
+                if (Math.abs(filteredGamma) > this.gyroDeadZone) {
+                    const newFOV = this.camera.fov + filteredGamma * this.zoomSensitivity;
+                    this.camera.fov = Math.max(CONFIG.camera.minFOV, Math.min(CONFIG.camera.maxFOV, newFOV));
+                }
+                
+                if (CONFIG.debug.showGyroValues) {
+                    console.log(`Gyro: α=${relativeAlpha.toFixed(1)}° β=${relativeBeta.toFixed(1)}° γ=${relativeGamma.toFixed(1)}° FOV=${this.camera.fov.toFixed(2)}`);
+                }
+            }
+            
+            // Rest of the methods from original gallery (unchanged)
             async initDB() {
-                // Note: IndexedDB is local to each browser/device
-                // This means each device (computer, iPhone, etc.) has its own separate gallery
                 return new Promise((resolve, reject) => {
                     const request = indexedDB.open('GalleryDB', 1);
                     
@@ -692,7 +1082,7 @@
                 request.onsuccess = () => {
                     const storedArtworks = request.result;
                     if (storedArtworks.length > 0) {
-                        this.log(`Loading ${storedArtworks.length} stored artworks...`);
+                        this.log(`Loading ${storedArtworks.length} user uploads...`);
                     }
                     
                     storedArtworks.forEach((data, index) => {
@@ -700,12 +1090,6 @@
                             this.restoreArtwork(data);
                         }, index * 100);
                     });
-                    
-                    if (storedArtworks.length > 0) {
-                        setTimeout(() => {
-                            this.setDefaultCameraPosition();
-                        }, storedArtworks.length * 100 + 500);
-                    }
                 };
             }
             
@@ -717,8 +1101,10 @@
             
             setupCamera() {
                 this.camera = new BABYLON.UniversalCamera('camera', 
-                    new BABYLON.Vector3(0, 1.6, -3), this.scene);
-                this.camera.setTarget(BABYLON.Vector3.Zero());
+                    new BABYLON.Vector3(0, 1.6, -CONFIG.camera.initialBackDistance), this.scene);
+                
+                this.camera.setTarget(new BABYLON.Vector3(0, 1.6, 5));
+                
                 this.camera.attachControl(this.canvas, true);
                 this.camera.speed = CONFIG.camera.speed;
                 this.camera.keysUp = [87]; // W
@@ -726,122 +1112,40 @@
                 this.camera.keysLeft = [65]; // A
                 this.camera.keysRight = [68]; // D
                 
-                // Adjust field of view using CONFIG
                 if (this.isMobile()) {
                     this.camera.fov = CONFIG.camera.mobileFOV;
                     
-                    // Extra zoom out for iPhone (smaller screens)
                     if (/iPhone/i.test(navigator.userAgent)) {
                         this.camera.fov = CONFIG.camera.iPhoneFOV;
-                        this.camera.position.z = -4; // Move camera back slightly
+                        this.camera.position.z = -8;
                     }
                 } else {
                     this.camera.fov = CONFIG.camera.defaultFOV;
                 }
-                
-                // Enhanced touch controls for mobile
-                if (this.isMobile()) {
-                    this.setupMobileTouchControls();
-                }
             }
             
-            setupMobileTouchControls() {
-                let lastTouchX = 0;
-                let lastTouchY = 0;
-                let isTouching = false;
-                let touchStartDistance = 0;
-                let initialFOV = this.camera.fov;
-                
-                this.canvas.addEventListener('touchstart', (e) => {
+            setupMouseWheelZoom() {
+                this.canvas.addEventListener('wheel', (e) => {
                     e.preventDefault();
                     
-                    if (e.touches.length === 1) {
-                        // Single touch - show UI
-                        isTouching = true;
-                        lastTouchX = e.touches[0].clientX;
-                        lastTouchY = e.touches[0].clientY;
-                        this.showUI();
-                    } else if (e.touches.length === 2) {
-                        // Two finger touch - prepare for camera control
-                        isTouching = true;
-                        const touch1 = e.touches[0];
-                        const touch2 = e.touches[1];
-                        touchStartDistance = Math.sqrt(
-                            Math.pow(touch2.clientX - touch1.clientX, 2) +
-                            Math.pow(touch2.clientY - touch1.clientY, 2)
-                        );
-                        
-                        lastTouchX = (touch1.clientX + touch2.clientX) / 2;
-                        lastTouchY = (touch1.clientY + touch2.clientY) / 2;
-                    }
-                });
-                
-                this.canvas.addEventListener('touchmove', (e) => {
-                    e.preventDefault();
+                    const zoomSpeed = 0.1;
+                    const delta = e.deltaY > 0 ? zoomSpeed : -zoomSpeed;
                     
-                    if (!isTouching) return;
-                    
-                    if (e.touches.length === 2) {
-                        // Two finger controls - INCREASED SENSITIVITY
-                        const touch1 = e.touches[0];
-                        const touch2 = e.touches[1];
-                        
-                        // Calculate center point for rotation
-                        const centerX = (touch1.clientX + touch2.clientX) / 2;
-                        const centerY = (touch1.clientY + touch2.clientY) / 2;
-                        
-                        // Camera rotation with MUCH higher sensitivity
-                        const deltaX = (centerX - lastTouchX) * 0.9; // Increased for faster response
-                        const deltaY = (centerY - lastTouchY) * 0.9; // Increased for faster response
-                        
-                        if (Math.abs(deltaX) > 0.001 || Math.abs(deltaY) > 0.001) {
-                            this.camera.alpha -= deltaX;
-                            this.camera.beta = Math.max(0.1, Math.min(Math.PI - 0.1, this.camera.beta + deltaY));
-                        }
-                        
-                        // Pinch to zoom
-                        const currentDistance = Math.sqrt(
-                            Math.pow(touch2.clientX - touch1.clientX, 2) +
-                            Math.pow(touch2.clientY - touch1.clientY, 2)
-                        );
-                        
-                        if (touchStartDistance > 0) {
-                            const zoomFactor = currentDistance / touchStartDistance;
-                            const newFOV = initialFOV / zoomFactor;
-                            this.camera.fov = Math.max(0.3, Math.min(1.5, newFOV));
-                        }
-                        
-                        lastTouchX = centerX;
-                        lastTouchY = centerY;
-                    }
-                });
-                
-                this.canvas.addEventListener('touchend', (e) => {
-                    if (e.touches.length === 0) {
-                        isTouching = false;
-                        initialFOV = this.camera.fov;
-                    } else if (e.touches.length === 1) {
-                        // Reset for single touch
-                        lastTouchX = e.touches[0].clientX;
-                        lastTouchY = e.touches[0].clientY;
-                    }
+                    const newFOV = this.camera.fov + delta;
+                    this.camera.fov = Math.max(CONFIG.camera.minFOV, Math.min(CONFIG.camera.maxFOV, newFOV));
                 });
             }
             
             initGyroscope() {
-                // Check if device orientation is supported
                 if (!('DeviceOrientationEvent' in window)) {
                     return;
                 }
                 
                 this.gyroSupported = true;
                 
-                // Check if we're on iOS and need permission
                 if (typeof DeviceOrientationEvent.requestPermission === 'function') {
-                    // iOS 13+ requires permission
                     this.showGyroPermissionButton();
                 } else {
-                    // Android or older iOS - start immediately if mobile
                     if (this.isMobile()) {
                         this.startGyroscope();
                     }
@@ -853,7 +1157,6 @@
                     const permissionBtn = document.getElementById('gyroPermission');
                     permissionBtn.classList.add('show');
                     
-                    // Auto-hide after duration from CONFIG
                     setTimeout(() => {
                         permissionBtn.classList.remove('show');
                     }, CONFIG.ui.gyroPermissionDuration);
@@ -866,7 +1169,7 @@
                     if (permission === 'granted') {
                         this.startGyroscope();
                         document.getElementById('gyroPermission').classList.remove('show');
-                        this.log('Gyroscope enabled');
+                        this.log('Gyroscope enabled with touch sync');
                     } else {
                         this.log('Gyroscope permission denied');
                     }
@@ -881,88 +1184,42 @@
                 
                 this.gyroEnabled = true;
                 
-                // Auto-calibrate by setting initial orientation as neutral
                 if (CONFIG.gyroscope.autoCalibrate) {
                     setTimeout(() => {
                         this.calibrateGyro();
-                    }, 1000); // Wait 1 second for stable reading
+                    }, 1000);
                 }
                 
                 window.addEventListener('deviceorientation', (event) => {
                     this.handleGyroscope(event);
                 });
                 
-                this.log('Gyroscope active: Look around + tilt L/R to zoom!');
+                this.log('Enhanced gyroscope active with touch sync!');
             }
             
             calibrateGyro() {
-                // Set current orientation as the neutral position
                 this.calibratedOrientation = {
                     alpha: this.lastOrientation.alpha,
                     beta: this.lastOrientation.beta,
                     gamma: this.lastOrientation.gamma
                 };
-                this.log('Gyroscope calibrated to current position');
-            }
-            
-            handleGyroscope(event) {
-                if (!this.gyroEnabled || !event.alpha) return;
                 
-                // Apply exponential smoothing
-                this.lastOrientation.alpha = this.lastOrientation.alpha * this.smoothing + (event.alpha || 0) * (1 - this.smoothing);
-                this.lastOrientation.beta = this.lastOrientation.beta * this.smoothing + (event.beta || 0) * (1 - this.smoothing);
-                this.lastOrientation.gamma = this.lastOrientation.gamma * this.smoothing + (event.gamma || 0) * (1 - this.smoothing);
+                // Reset touch rotation when calibrating
+                this.touchRotation.x = 0;
+                this.touchRotation.y = 0;
+                this.baseRotation.x = this.camera.rotation.x;
+                this.baseRotation.y = this.camera.rotation.y;
                 
-                // Calculate relative orientation (subtract calibrated neutral position)
-                // const relativeAlpha = this.lastOrientation.alpha - this.calibratedOrientation.alpha;
-                // Calculate relative orientation  
-                let relativeAlpha = this.lastOrientation.alpha - this.calibratedOrientation.alpha;
-
-                // Constrain to ±180° for shortest path (this is the real fix)
-                while (relativeAlpha > 180) relativeAlpha -= 360;
-                while (relativeAlpha < -180) relativeAlpha += 360;
-
-                const relativeBeta = this.lastOrientation.beta - this.calibratedOrientation.beta;
-                const relativeGamma = this.lastOrientation.gamma - this.calibratedOrientation.gamma;
-                
-                // Convert to radians
-                const alpha = relativeAlpha * Math.PI / 180;
-                const beta = relativeBeta * Math.PI / 180;
-                const gamma = relativeGamma * Math.PI / 180;
-                
-                // Apply dead zone (ignore tiny movements)
-                const filteredAlpha = Math.abs(alpha) > this.gyroDeadZone ? alpha : 0;
-                const filteredBeta = Math.abs(beta) > this.gyroDeadZone ? beta : 0;
-                const filteredGamma = Math.abs(gamma) > this.gyroDeadZone ? gamma : 0;
-                
-                // Apply rotation with HIGH sensitivity
-                this.camera.rotation.y = -filteredAlpha * this.gyroSensitivity;
-                this.camera.rotation.x = Math.max(
-                    -CONFIG.gyroscope.maxRotationX, 
-                    Math.min(CONFIG.gyroscope.maxRotationX, filteredBeta * this.gyroSensitivity)
-                );
-                
-                // Gamma-based zoom control (tilt left/right to zoom in/out)
-                if (Math.abs(filteredGamma) > this.gyroDeadZone) {
-                    const newFOV = this.camera.fov + filteredGamma * this.zoomSensitivity;
-                    this.camera.fov = Math.max(CONFIG.camera.minFOV, Math.min(CONFIG.camera.maxFOV, newFOV));
-                }
-                
-                // Debug output (if enabled)
-                if (CONFIG.debug.showGyroValues) {
-                    console.log(`Gyro: α=${relativeAlpha.toFixed(1)}° β=${relativeBeta.toFixed(1)}° γ=${relativeGamma.toFixed(1)}° FOV=${this.camera.fov.toFixed(2)}`);
-                }
+                this.log('Gyroscope calibrated with current position');
             }
             
             setupOrientationDetection() {
-                // Detect orientation changes
                 window.addEventListener('orientationchange', () => {
                     setTimeout(() => {
                         this.handleOrientationChange();
-                    }, 500); // Delay to ensure orientation has changed
+                    }, 500);
                 });
                 
-                // Initial check
                 this.handleOrientationChange();
             }
             
@@ -970,13 +1227,10 @@
                 if (!this.isMobile()) return;
                 
                 const orientationHint = document.getElementById('orientationHint');
-                
-                // Check if in portrait orientation
                 const isPortrait = window.innerHeight > window.innerWidth;
                 
                 if (isPortrait) {
                     orientationHint.classList.add('show');
-                    // Auto-hide hint after duration from CONFIG
                     setTimeout(() => {
                         orientationHint.classList.remove('show');
                     }, CONFIG.ui.orientationHintDuration);
@@ -984,28 +1238,33 @@
                     orientationHint.classList.remove('show');
                 }
                 
-                // Resize engine
                 setTimeout(() => {
                     this.engine.resize();
                 }, 100);
             }
             
-            setDefaultCameraPosition() {
+            positionNearFirstArtwork() {
                 if (this.artworks.length > 0) {
                     const firstArtwork = this.artworks[0];
-                    const pos = firstArtwork.position.pos;
+                    const artPos = firstArtwork.position.pos;
                     
-                    // Position camera to face first artwork
-                    if (Math.abs(pos.z - 9.8) < 0.1) { // Back wall
-                        this.camera.position.set(pos.x, pos.y, pos.z - 3);
-                    } else if (Math.abs(pos.x + 9.8) < 0.1) { // Left wall
-                        this.camera.position.set(pos.x + 3, pos.y, pos.z);
-                    } else if (Math.abs(pos.x - 9.8) < 0.1) { // Right wall
-                        this.camera.position.set(pos.x - 3, pos.y, pos.z);
+                    if (Math.abs(artPos.z - 9.8) < 0.1) { // Back wall
+                        this.camera.position.set(artPos.x, artPos.y, artPos.z - 4);
+                    } else if (Math.abs(artPos.x + 9.8) < 0.1) { // Left wall
+                        this.camera.position.set(artPos.x + 4, artPos.y, artPos.z);
+                    } else if (Math.abs(artPos.x - 9.8) < 0.1) { // Right wall
+                        this.camera.position.set(artPos.x - 4, artPos.y, artPos.z);
                     }
                     
-                    this.camera.setTarget(pos);
-                    this.log(`Viewing first artwork`);
+                    const direction = artPos.subtract(this.camera.position).normalize();
+                    this.camera.rotation.y = Math.atan2(direction.x, direction.z);
+                    this.camera.rotation.x = Math.asin(-direction.y);
+                    
+                    // Update base rotation for gyro sync
+                    this.baseRotation.x = this.camera.rotation.x;
+                    this.baseRotation.y = this.camera.rotation.y;
+                    
+                    this.log(`Positioned near first artwork - collision detection active!`);
                 }
             }
             
@@ -1022,12 +1281,16 @@
             }
             
             createGallery() {
-                // Floor using CONFIG colors
                 const floor = BABYLON.MeshBuilder.CreateGround('floor', 
                     { width: CONFIG.gallery.wallWidth, height: CONFIG.gallery.wallWidth }, this.scene);
                 const floorMat = new BABYLON.StandardMaterial('floorMat', this.scene);
                 floorMat.diffuseColor = new BABYLON.Color3(...CONFIG.colors.floor);
                 floor.material = floorMat;
+                
+                // NEW: Enable collision on floor
+                if (CONFIG.collision.enabled) {
+                    floor.checkCollisions = true;
+                }
                 
                 this.createWalls();
             }
@@ -1051,8 +1314,14 @@
                 const wallMat = new BABYLON.StandardMaterial('wallMat', this.scene);
                 wallMat.diffuseColor = new BABYLON.Color3(...CONFIG.colors.walls);
                 
-                [backWall, leftWall, rightWall].forEach(wall => {
+                const walls = [backWall, leftWall, rightWall];
+                walls.forEach(wall => {
                     wall.material = wallMat;
+                    
+                    // NEW: Enable collision on walls
+                    if (CONFIG.collision.enabled) {
+                        wall.checkCollisions = true;
+                    }
                 });
             }
             
@@ -1095,7 +1364,6 @@
             
             hideUpload() {
                 document.getElementById('uploadModal').classList.remove('show');
-                // Clear form
                 document.getElementById('authorInput').value = '';
                 document.getElementById('descriptionInput').value = '';
             }
@@ -1108,7 +1376,7 @@
                 this.log(`Processing ${files.length} files...`);
                 
                 const validFiles = files.filter(file => {
-                    if (!file.type.match('image/(jpeg|jpg|png)')) {
+                    if (!file.type.match('image/(jpeg|jpg|png|webp|gif)')) {
                         this.log(`Skipped ${file.name}: Invalid format`);
                         return false;
                     }
@@ -1131,7 +1399,7 @@
                     const author = document.getElementById('authorInput').value.trim() || 'Unknown Artist';
                     const description = document.getElementById('descriptionInput').value.trim() || '';
                     
-                    this.createArtwork(file.name, e.target.result, author, description);
+                    this.createArtwork(file.name, e.target.result, author, description, false);
                 };
                 
                 reader.onerror = () => {
@@ -1141,93 +1409,128 @@
                 reader.readAsDataURL(file);
             }
             
-            createArtwork(name, dataURL, author, description) {
-                // Check if we need a new room
-                const currentRoomArtworks = this.artworks.filter(art => art.room === this.currentRoom);
-                if (currentRoomArtworks.length >= this.maxArtworksPerRoom) {
+            createArtwork(name, imageSource, author, description, isDefault) {
+                // Find next available position (skip positions taken by defaults if this is user upload)
+                let availablePositions = [];
+                
+                if (isDefault) {
+                    // For defaults, use positions in order
+                    availablePositions = this.artworkPositions.filter((pos, index) => {
+                        return !this.artworks.some(art => 
+                            art.position && 
+                            Math.abs(art.position.pos.x - pos.pos.x) < 0.1 && 
+                            Math.abs(art.position.pos.z - pos.pos.z) < 0.1
+                        );
+                    });
+                } else {
+                    // For user uploads, use any available position
+                    availablePositions = this.artworkPositions.filter((pos, index) => {
+                        return !this.artworks.some(art => 
+                            art.position && 
+                            Math.abs(art.position.pos.x - pos.pos.x) < 0.1 && 
+                            Math.abs(art.position.pos.z - pos.pos.z) < 0.1
+                        );
+                    });
+                }
+                
+                if (availablePositions.length === 0) {
+                    // Move to next room if current room is full
                     this.currentRoom++;
-                    this.log(`Room ${this.currentRoom - 1} full. Creating Room ${this.currentRoom}`);
+                    this.log(`Room full. Creating Room ${this.currentRoom}`);
+                    // For next room, use first position with room offset
+                    availablePositions = [this.artworkPositions[0]];
                 }
                 
+                const position = availablePositions[0];
                 const totalArtworks = this.artworks.length;
-                const positionIndex = totalArtworks % this.maxArtworksPerRoom;
-                
-                if (positionIndex >= this.artworkPositions.length) {
-                    this.log('No more wall positions available');
-                    return;
-                }
                 
                 try {
-                    const position = this.artworkPositions[positionIndex];
-                    
-                    // Create plane using CONFIG dimensions
-                    const plane = BABYLON.MeshBuilder.CreatePlane(`artwork_${totalArtworks}`, 
-                        { width: CONFIG.gallery.artworkWidth, height: CONFIG.gallery.artworkHeight }, this.scene);
-                    
-                    // Offset position for different rooms using CONFIG spacing
-                    const roomOffset = (this.currentRoom - 1) * CONFIG.gallery.roomSpacing;
-                    const adjustedPos = position.pos.clone();
-                    adjustedPos.z += roomOffset;
-                    
-                    plane.position = adjustedPos;
-                    plane.rotation = position.rot.clone();
-                    
-                    // Create texture and material
-                    const texture = new BABYLON.Texture(dataURL, this.scene);
-                    const material = new BABYLON.StandardMaterial(`mat_${totalArtworks}`, this.scene);
-                    
-                    material.diffuseTexture = texture;
-                    material.emissiveTexture = texture;
-                    material.emissiveColor = new BABYLON.Color3(...CONFIG.colors.artworkEmissive);
-                    material.backFaceCulling = false;
-                    
-                    plane.material = material;
-                    
-                    // Create spotlight
-                    const spotlightPos = adjustedPos.clone();
-                    spotlightPos.y += 1;
-                    spotlightPos.z -= 1;
-                    
-                    const spotlight = new BABYLON.SpotLight(`spot_${totalArtworks}`,
-                        spotlightPos,
-                        new BABYLON.Vector3(0, -0.5, 0.5),
-                        Math.PI/4, 2, this.scene);
-                    spotlight.intensity = CONFIG.lighting.spotlight.normal;
-                    this.spotLights.push(spotlight);
-                    
-                    const artworkData = {
-                        mesh: plane,
-                        name: name,
-                        author: author,
-                        description: description,
-                        material: material,
-                        texture: texture,
-                        spotlight: spotlight,
-                        position: { pos: adjustedPos, rot: position.rot },
-                        room: this.currentRoom,
-                        timestamp: new Date().toISOString()
+                    // NEW: Create image to get dimensions for user uploads too
+                    const img = new Image();
+                    img.onload = () => {
+                        const { width, height } = this.calculateProportionalSize(img.width, img.height);
+                        
+                        const plane = BABYLON.MeshBuilder.CreatePlane(
+                            `artwork_${totalArtworks}`, 
+                            { width: width, height: height }, 
+                            this.scene
+                        );
+                        
+                        const roomOffset = isDefault ? 0 : (this.currentRoom - 1) * CONFIG.gallery.roomSpacing;
+                        const adjustedPos = position.pos.clone();
+                        adjustedPos.z += roomOffset;
+                        
+                        plane.position = adjustedPos;
+                        plane.rotation = position.rot.clone();
+                        
+                        const texture = new BABYLON.Texture(imageSource, this.scene);
+                        const material = new BABYLON.StandardMaterial(`mat_${totalArtworks}`, this.scene);
+                        
+                        material.diffuseTexture = texture;
+                        material.emissiveTexture = texture;
+                        material.emissiveColor = new BABYLON.Color3(...CONFIG.colors.artworkEmissive);
+                        material.backFaceCulling = false;
+                        
+                        plane.material = material;
+                        
+                        const spotlightPos = adjustedPos.clone();
+                        spotlightPos.y += 1;
+                        spotlightPos.z -= 1;
+                        
+                        const spotlight = new BABYLON.SpotLight(`spot_${totalArtworks}`,
+                            spotlightPos,
+                            new BABYLON.Vector3(0, -0.5, 0.5),
+                            Math.PI/4, 2, this.scene);
+                        spotlight.intensity = CONFIG.lighting.spotlight.normal;
+                        this.spotLights.push(spotlight);
+                        
+                        const artworkData = {
+                            mesh: plane,
+                            name: name,
+                            author: author,
+                            description: description,
+                            material: material,
+                            texture: texture,
+                            spotlight: spotlight,
+                            position: { pos: adjustedPos, rot: position.rot },
+                            room: isDefault ? 1 : this.currentRoom,
+                            isDefault: isDefault,
+                            imageSource: imageSource,
+                            timestamp: new Date().toISOString(),
+                            originalDimensions: { width: img.width, height: img.height },
+                            displayDimensions: { width: width, height: height }
+                        };
+                        
+                        this.artworks.push(artworkData);
+                        
+                        // Only save user uploads to IndexedDB (not defaults)
+                        if (!isDefault) {
+                            this.saveArtwork({
+                                name: name,
+                                author: author,
+                                description: description,
+                                dataURL: imageSource,
+                                room: this.currentRoom,
+                                timestamp: artworkData.timestamp
+                            });
+                        }
+                        
+                        this.updateUI();
+                        
+                        if (!isDefault) {
+                            this.log(`Added: ${name} by ${author} (${width.toFixed(1)}x${height.toFixed(1)} units)`);
+                        }
+                        
+                        if (this.artworks.length === 1) {
+                            setTimeout(() => this.positionNearFirstArtwork(), 500);
+                        }
                     };
                     
-                    this.artworks.push(artworkData);
+                    img.onerror = () => {
+                        this.log(`Error loading ${name}: Invalid image`);
+                    };
                     
-                    // Save to IndexedDB for persistence
-                    this.saveArtwork({
-                        name: name,
-                        author: author,
-                        description: description,
-                        dataURL: dataURL,
-                        room: this.currentRoom,
-                        positionIndex: positionIndex,
-                        timestamp: artworkData.timestamp
-                    });
-                    
-                    this.updateUI();
-                    this.log(`Added: ${name} by ${author}`);
-                    
-                    // Set camera to face first artwork if this is the first one
-                    if (this.artworks.length === 1) {
-                        setTimeout(() => this.setDefaultCameraPosition(), 500);
-                    }
+                    img.src = imageSource;
                     
                 } catch (error) {
                     this.log(`Error creating ${name}: ${error.message}`);
@@ -1236,54 +1539,80 @@
             
             restoreArtwork(data) {
                 try {
-                    const position = this.artworkPositions[data.positionIndex];
-                    
-                    const plane = BABYLON.MeshBuilder.CreatePlane(`artwork_${this.artworks.length}`, 
-                        { width: CONFIG.gallery.artworkWidth, height: CONFIG.gallery.artworkHeight }, this.scene);
-                    
-                    const roomOffset = (data.room - 1) * CONFIG.gallery.roomSpacing;
-                    const adjustedPos = position.pos.clone();
-                    adjustedPos.z += roomOffset;
-                    
-                    plane.position = adjustedPos;
-                    plane.rotation = position.rot.clone();
-                    
-                    const texture = new BABYLON.Texture(data.dataURL, this.scene);
-                    const material = new BABYLON.StandardMaterial(`mat_${this.artworks.length}`, this.scene);
-                    
-                    material.diffuseTexture = texture;
-                    material.emissiveTexture = texture;
-                    material.emissiveColor = new BABYLON.Color3(...CONFIG.colors.artworkEmissive);
-                    material.backFaceCulling = false;
-                    
-                    plane.material = material;
-                    
-                    const spotlightPos = adjustedPos.clone();
-                    spotlightPos.y += 1;
-                    spotlightPos.z -= 1;
-                    
-                    const spotlight = new BABYLON.SpotLight(`spot_${this.artworks.length}`,
-                        spotlightPos,
-                        new BABYLON.Vector3(0, -0.5, 0.5),
-                        Math.PI/4, 2, this.scene);
-                    spotlight.intensity = CONFIG.lighting.spotlight.normal;
-                    this.spotLights.push(spotlight);
-                    
-                    this.artworks.push({
-                        mesh: plane,
-                        name: data.name,
-                        author: data.author,
-                        description: data.description,
-                        material: material,
-                        texture: texture,
-                        spotlight: spotlight,
-                        position: { pos: adjustedPos, rot: position.rot },
-                        room: data.room,
-                        timestamp: data.timestamp
+                    // Find available position for restored artwork
+                    const availablePositions = this.artworkPositions.filter((pos, index) => {
+                        return !this.artworks.some(art => 
+                            art.position && 
+                            Math.abs(art.position.pos.x - pos.pos.x) < 0.1 && 
+                            Math.abs(art.position.pos.z - pos.pos.z) < 0.1
+                        );
                     });
                     
-                    this.currentRoom = Math.max(this.currentRoom, data.room);
-                    this.updateUI();
+                    if (availablePositions.length === 0) {
+                        this.log(`No space for ${data.name}`);
+                        return;
+                    }
+                    
+                    const position = availablePositions[0];
+                    
+                    // NEW: Use proportional sizing for restored artworks too
+                    const img = new Image();
+                    img.onload = () => {
+                        const { width, height } = this.calculateProportionalSize(img.width, img.height);
+                        
+                        const plane = BABYLON.MeshBuilder.CreatePlane(`user_artwork_${this.artworks.length}`, 
+                            { width: width, height: height }, this.scene);
+                        
+                        const roomOffset = (data.room - 1) * CONFIG.gallery.roomSpacing;
+                        const adjustedPos = position.pos.clone();
+                        adjustedPos.z += roomOffset;
+                        
+                        plane.position = adjustedPos;
+                        plane.rotation = position.rot.clone();
+                        
+                        const texture = new BABYLON.Texture(data.dataURL, this.scene);
+                        const material = new BABYLON.StandardMaterial(`user_mat_${this.artworks.length}`, this.scene);
+                        
+                        material.diffuseTexture = texture;
+                        material.emissiveTexture = texture;
+                        material.emissiveColor = new BABYLON.Color3(...CONFIG.colors.artworkEmissive);
+                        material.backFaceCulling = false;
+                        
+                        plane.material = material;
+                        
+                        const spotlightPos = adjustedPos.clone();
+                        spotlightPos.y += 1;
+                        spotlightPos.z -= 1;
+                        
+                        const spotlight = new BABYLON.SpotLight(`user_spot_${this.artworks.length}`,
+                            spotlightPos,
+                            new BABYLON.Vector3(0, -0.5, 0.5),
+                            Math.PI/4, 2, this.scene);
+                        spotlight.intensity = CONFIG.lighting.spotlight.normal;
+                        this.spotLights.push(spotlight);
+                        
+                        this.artworks.push({
+                            mesh: plane,
+                            name: data.name,
+                            author: data.author,
+                            description: data.description,
+                            material: material,
+                            texture: texture,
+                            spotlight: spotlight,
+                            position: { pos: adjustedPos, rot: position.rot },
+                            room: data.room,
+                            isDefault: false,
+                            imageSource: data.dataURL,
+                            timestamp: data.timestamp,
+                            originalDimensions: { width: img.width, height: img.height },
+                            displayDimensions: { width: width, height: height }
+                        });
+                        
+                        this.currentRoom = Math.max(this.currentRoom, data.room);
+                        this.updateUI();
+                    };
+                    
+                    img.src = data.dataURL;
                     
                 } catch (error) {
                     this.log(`Error restoring ${data.name}: ${error.message}`);
@@ -1291,7 +1620,11 @@
             }
             
             updateUI() {
-                document.getElementById('artCount').textContent = `${this.artworks.length} artworks`;
+                const defaultCount = this.artworks.filter(art => art.isDefault).length;
+                const userCount = this.artworks.filter(art => !art.isDefault).length;
+                
+                document.getElementById('artCount').textContent = 
+                    `${this.artworks.length} artworks (${defaultCount} default, ${userCount} user)`;
                 
                 const maxRoom = Math.max(...this.artworks.map(art => art.room), 1);
                 document.getElementById('roomInfo').textContent = `Room ${this.currentRoom}/${maxRoom}`;
@@ -1303,14 +1636,12 @@
                     nextRoomBtn.style.display = 'none';
                 }
                 
-                // Show gyro toggle and calibrate if supported and on mobile
                 const gyroToggle = document.getElementById('gyroToggle');
                 const gyroCalibrate = document.getElementById('gyroCalibrate');
                 if (this.gyroSupported && this.isMobile()) {
                     gyroToggle.style.display = 'block';
                     gyroToggle.textContent = `Gyro: ${this.gyroEnabled ? 'ON' : 'OFF'}`;
                     
-                    // Show calibrate button only when gyro is enabled
                     if (this.gyroEnabled) {
                         gyroCalibrate.style.display = 'block';
                     } else {
@@ -1323,22 +1654,33 @@
                 
                 if (this.artworks.length > 0) {
                     const current = this.artworks[this.currentArtIndex];
-                    document.getElementById('artTitle').textContent = `"${current.name}" by ${current.author}`;
+                    const badge = current.isDefault ? 
+                        '<span class="default-badge">Classic</span>' : 
+                        '<span class="user-badge">Your Art</span>';
+                    document.getElementById('artTitle').innerHTML = 
+                        `"${current.name}" by ${current.author} ${badge}`;
                 } else {
-                    document.getElementById('artTitle').textContent = 'Virtual Gallery';
+                    document.getElementById('artTitle').textContent = 'Enhanced Virtual Gallery';
                 }
             }
             
-            // Control methods
             resetCamera() {
                 if (this.artworks.length > 0) {
-                    this.setDefaultCameraPosition();
+                    this.positionNearFirstArtwork();
                 } else {
-                    this.camera.position = new BABYLON.Vector3(0, 1.6, -3);
-                    this.camera.setTarget(BABYLON.Vector3.Zero());
+                    this.camera.position = new BABYLON.Vector3(0, 1.6, -CONFIG.camera.initialBackDistance);
+                    const direction = new BABYLON.Vector3(0, 0, 1);
+                    this.camera.rotation.y = Math.atan2(direction.x, direction.z);
+                    this.camera.rotation.x = 0;
+                    
+                    // Reset rotation tracking
+                    this.baseRotation.x = this.camera.rotation.x;
+                    this.baseRotation.y = this.camera.rotation.y;
+                    this.touchRotation.x = 0;
+                    this.touchRotation.y = 0;
                 }
                 this.currentArtIndex = 0;
-                this.log('Camera reset');
+                this.log('Camera reset with collision protection');
                 this.updateUI();
                 this.showUI();
             }
@@ -1378,7 +1720,6 @@
                     this.gyroEnabled = false;
                     this.log('Gyroscope disabled');
                 } else {
-                    // Check if we need permission (iOS)
                     if (typeof DeviceOrientationEvent.requestPermission === 'function') {
                         this.requestGyroPermission();
                     } else {
@@ -1390,7 +1731,6 @@
                 this.showUI();
             }
             
-            // Manual gyroscope calibration method
             recalibrateGyro() {
                 if (this.gyroEnabled) {
                     this.calibrateGyro();
@@ -1410,22 +1750,30 @@
                 
                 this.currentArtIndex = (this.currentArtIndex + 1) % this.artworks.length;
                 const artwork = this.artworks[this.currentArtIndex];
+                const artPos = artwork.position.pos;
                 
-                const pos = artwork.position.pos;
-                const offset = new BABYLON.Vector3();
-                
-                if (Math.abs(pos.z - 9.8 - (artwork.room - 1) * CONFIG.gallery.roomSpacing) < 0.1) { // Back wall
-                    offset.set(pos.x, pos.y, pos.z - 3);
-                } else if (Math.abs(pos.x + 9.8) < 0.1) { // Left wall
-                    offset.set(pos.x + 3, pos.y, pos.z);
-                } else if (Math.abs(pos.x - 9.8) < 0.1) { // Right wall
-                    offset.set(pos.x - 3, pos.y, pos.z);
+                if (Math.abs(artPos.z - 9.8 - (artwork.room - 1) * CONFIG.gallery.roomSpacing) < 0.1) {
+                    this.camera.position.set(artPos.x, artPos.y, artPos.z - 4);
+                } else if (Math.abs(artPos.x + 9.8) < 0.1) {
+                    this.camera.position.set(artPos.x + 4, artPos.y, artPos.z);
+                } else if (Math.abs(artPos.x - 9.8) < 0.1) {
+                    this.camera.position.set(artPos.x - 4, artPos.y, artPos.z);
                 }
                 
-                this.camera.position = offset;
-                this.camera.setTarget(pos);
+                const direction = artPos.subtract(this.camera.position).normalize();
+                this.camera.rotation.y = Math.atan2(direction.x, direction.z);
+                this.camera.rotation.x = Math.asin(-direction.y);
                 
-                this.log(`Viewing: "${artwork.name}" by ${artwork.author} (${this.currentArtIndex + 1}/${this.artworks.length})`);
+                // Update rotation tracking
+                this.baseRotation.x = this.camera.rotation.x;
+                this.baseRotation.y = this.camera.rotation.y;
+                this.touchRotation.x = 0;
+                this.touchRotation.y = 0;
+                
+                const type = artwork.isDefault ? 'classic' : 'user';
+                const dims = artwork.displayDimensions ? 
+                    ` (${artwork.displayDimensions.width.toFixed(1)}x${artwork.displayDimensions.height.toFixed(1)})` : '';
+                this.log(`Viewing: "${artwork.name}" by ${artwork.author} (${type})${dims} (${this.currentArtIndex + 1}/${this.artworks.length})`);
                 this.updateUI();
                 this.showUI();
             }
@@ -1443,10 +1791,19 @@
                 
                 if (roomArtworks.length > 0) {
                     const firstArtwork = roomArtworks[0];
-                    const pos = firstArtwork.position.pos;
+                    const artPos = firstArtwork.position.pos;
                     
-                    this.camera.position.set(pos.x, pos.y, pos.z - 3);
-                    this.camera.setTarget(pos);
+                    this.camera.position.set(artPos.x, artPos.y, artPos.z - 4);
+                    
+                    const direction = artPos.subtract(this.camera.position).normalize();
+                    this.camera.rotation.y = Math.atan2(direction.x, direction.z);
+                    this.camera.rotation.x = Math.asin(-direction.y);
+                    
+                    // Update rotation tracking
+                    this.baseRotation.x = this.camera.rotation.x;
+                    this.baseRotation.y = this.camera.rotation.y;
+                    this.touchRotation.x = 0;
+                    this.touchRotation.y = 0;
                     
                     this.currentRoom = targetRoom;
                     this.log(`Moved to Room ${targetRoom}`);
@@ -1455,7 +1812,39 @@
                 }
             }
             
-            async clearGallery() {
+            // Clear only user artworks (keep defaults)
+            async clearUserArt() {
+                const userArtworks = this.artworks.filter(art => !art.isDefault);
+                
+                userArtworks.forEach(artwork => {
+                    artwork.mesh.dispose();
+                    artwork.material.dispose();
+                    artwork.texture.dispose();
+                    artwork.spotlight.dispose();
+                });
+                
+                // Remove user artworks from main array
+                this.artworks = this.artworks.filter(art => art.isDefault);
+                
+                // Remove user spotlights
+                this.spotLights = this.spotLights.filter(light => {
+                    const isUserLight = userArtworks.some(art => art.spotlight === light);
+                    return !isUserLight;
+                });
+                
+                this.currentArtIndex = 0;
+                this.currentRoom = 1;
+                
+                await this.clearStoredArtworks();
+                
+                this.log(`Cleared ${userArtworks.length} user uploads. Default artworks remain.`);
+                this.updateUI();
+                this.showUI();
+            }
+            
+            // Reset everything to defaults only
+            async resetToDefaults() {
+                // Clear all artworks
                 this.artworks.forEach(artwork => {
                     artwork.mesh.dispose();
                     artwork.material.dispose();
@@ -1467,19 +1856,45 @@
                 this.spotLights = [];
                 this.currentArtIndex = 0;
                 this.currentRoom = 1;
+                this.defaultArtworksLoaded = 0;
                 
                 await this.clearStoredArtworks();
                 
-                this.log('Gallery cleared');
+                // Reload defaults
+                this.loadDefaultArtworks();
+                
+                this.log('Gallery reset to default artworks with enhanced features');
                 this.updateUI();
                 this.showUI();
+            }
+            
+            // NEW: Debug function to show texture and artwork info
+            debugTextures() {
+                console.log('Debugging textures:');
+                this.artworks.forEach((artwork, index) => {
+                    console.log(`${index + 1}. ${artwork.name}:`);
+                    console.log(`- Texture URL: ${artwork.imageURL || artwork.imageSource?.substring(0, 100) + '...'}`);
+                    console.log(`- Texture ready: ${artwork.texture.isReady()}`);
+                    console.log(`- Material:`, artwork.material);
+                    if (artwork.originalDimensions) {
+                        console.log(`- Original: ${artwork.originalDimensions.width}x${artwork.originalDimensions.height}px`);
+                        console.log(`- Display: ${artwork.displayDimensions.width.toFixed(2)}x${artwork.displayDimensions.height.toFixed(2)} units`);
+                    }
+                });
+                
+                console.log(`Total artworks: ${this.artworks.length}`);
+                console.log(`Collision enabled: ${CONFIG.collision.enabled}`);
+                console.log(`Camera ellipsoid:`, this.camera.ellipsoid);
+                console.log(`Touch-Gyro sync: ${CONFIG.gyroscope.syncWithTouch}`);
+                
+                this.log(`Debug info logged to console. Collisions: ${CONFIG.collision.enabled ? 'ON' : 'OFF'}`);
             }
         }
         
         // Initialize
         let app;
         window.addEventListener('DOMContentLoaded', () => {
-            app = new MultiArtworkGallery();
+            app = new EnhancedMultiArtworkGallery();
         });
     </script>
 </body>

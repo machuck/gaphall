@@ -1,0 +1,46 @@
+{
+  "artworks": [
+    {
+      "filename": "1693px-Retrato_del_Papa_Inocencio_X._Roma,_by_Diego_Velázquez.jpg",
+      "name": "Portrait of Pope Innocent X",
+      "author": "Diego Velázquez",
+      "description": "Baroque masterpiece depicting Pope Innocent X (c. 1650)"
+    },
+    {
+      "filename": "1877px-Las_Meninas,_by_Diego_Velázquez,_from_Prado_in_Google_Earth.jpg",
+      "name": "Las Meninas",
+      "author": "Diego Velázquez", 
+      "description": "Complex composition featuring the Infanta Margarita Teresa and her entourage (1656)"
+    },
+    {
+      "filename": "1912px-John_Singer_Sargent_-_Carnation,_Lily,_Lily,_Rose_-_Google_Art_Project.jpg",
+      "name": "Carnation, Lily, Lily, Rose",
+      "author": "John Singer Sargent",
+      "description": "Impressionist painting of two young girls lighting Chinese lanterns at twilight (1885-1886)"
+    },
+    {
+      "filename": "2942px-\"Un_Bar_aux_Folies-Bergère\"_by_Édouard_Manet_(1882).jpg",
+      "name": "A Bar at the Folies-Bergère",
+      "author": "Édouard Manet",
+      "description": "Manet's final major work, depicting a barmaid at the famous Parisian nightclub (1882)"
+    },
+    {
+      "filename": "Edouard_Manet_-_Olympia_-_Google_Art_Project_3.jpg",
+      "name": "Olympia", 
+      "author": "Édouard Manet",
+      "description": "Controversial modernist painting inspired by Titian's Venus of Urbino, caused scandal at the 1865 Paris Salon (1863)"
+    },
+    {
+      "filename": "Madame_X_(Madame_Pierre_Gautreau),_John_Singer_Sargent,_1884_(unfree_frame_crop).jpg",
+      "name": "Madame X (Madame Pierre Gautreau)",
+      "author": "John Singer Sargent",
+      "description": "Portrait of socialite Virginie Amélie Avegno Gautreau, initially controversial but now considered Sargent's masterpiece (1884)"
+    },
+    {
+      "filename": "The_Daughters_of_Edward_Darley_Boit,_John_Singer_Sargent,_1882_(unfree_frame_crop).jpg",
+      "name": "The Daughters of Edward Darley Boit",
+      "author": "John Singer Sargent", 
+      "description": "Innovative group portrait of four sisters in their Paris apartment, influenced by Velázquez's Las Meninas (1882)"
+    }
+  ]
+}
