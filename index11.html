@@ -1101,10 +1101,9 @@
             
             setupCamera() {
                 this.camera = new BABYLON.UniversalCamera('camera', 
-                    //new BABYLON.Vector3(0, 1.6, -CONFIG.camera.initialBackDistance), this.scene);
-                    new BABYLON.Vector3(0, 1.6, 0.5), this.scene);
+                    new BABYLON.Vector3(0, 1.6, -CONFIG.camera.initialBackDistance), this.scene);
                 
-                this.camera.setTarget(new BABYLON.Vector3(0, 1.6, 8));
+                this.camera.setTarget(new BABYLON.Vector3(0, 1.6, 5));
                 
                 this.camera.attachControl(this.canvas, true);
                 this.camera.speed = CONFIG.camera.speed;
@@ -1412,37 +1411,10 @@
             
             createArtwork(name, imageSource, author, description, isDefault) {
                 // Find next available position (skip positions taken by defaults if this is user upload)
-//                let availablePositions = [];
-//                
-//                if (isDefault) {
-//                    // For defaults, use positions in order
-//                    availablePositions = this.artworkPositions.filter((pos, index) => {
-//                        return !this.artworks.some(art => 
-//                            art.position && 
-//                            Math.abs(art.position.pos.x - pos.pos.x) < 0.1 && 
-//                            Math.abs(art.position.pos.z - pos.pos.z) < 0.1
-//                        );
-//                    });
-//                } else {
-//                    // For user uploads, use any available position
-//                    availablePositions = this.artworkPositions.filter((pos, index) => {
-//                        return !this.artworks.some(art => 
-//                            art.position && 
-//                            Math.abs(art.position.pos.x - pos.pos.x) < 0.1 && 
-//                            Math.abs(art.position.pos.z - pos.pos.z) < 0.1
-//                        );
-//                    });
-//                }
-                
-                // NEW - FIXED LOGIC
                 let availablePositions = [];
-                const reservedPositions = new Set();
-
-                // Count expected defaults to reserve their positions
-                const expectedDefaults = DEFAULT_ARTWORKS.length;
-
+                
                 if (isDefault) {
-                    // For defaults, use positions in order starting from 0
+                    // For defaults, use positions in order
                     availablePositions = this.artworkPositions.filter((pos, index) => {
                         return !this.artworks.some(art => 
                             art.position && 
@@ -1451,26 +1423,14 @@
                         );
                     });
                 } else {
-                    // For user uploads, START AFTER all default positions
-                    const startIndex = expectedDefaults;
-                    availablePositions = this.artworkPositions.slice(startIndex).filter((pos, index) => {
+                    // For user uploads, use any available position
+                    availablePositions = this.artworkPositions.filter((pos, index) => {
                         return !this.artworks.some(art => 
                             art.position && 
                             Math.abs(art.position.pos.x - pos.pos.x) < 0.1 && 
                             Math.abs(art.position.pos.z - pos.pos.z) < 0.1
                         );
                     });
-                    
-                    // If no positions available after defaults, use any remaining
-                    if (availablePositions.length === 0) {
-                        availablePositions = this.artworkPositions.filter((pos, index) => {
-                            return !this.artworks.some(art => 
-                                art.position && 
-                                Math.abs(art.position.pos.x - pos.pos.x) < 0.1 && 
-                                Math.abs(art.position.pos.z - pos.pos.z) < 0.1
-                            );
-                        });
-                    }
                 }
                 
                 if (availablePositions.length === 0) {
@@ -1708,7 +1668,7 @@
                 if (this.artworks.length > 0) {
                     this.positionNearFirstArtwork();
                 } else {
-                    this.camera.position = new BABYLON.Vector3(0, 1.6, 8);
+                    this.camera.position = new BABYLON.Vector3(0, 1.6, -CONFIG.camera.initialBackDistance);
                     const direction = new BABYLON.Vector3(0, 0, 1);
                     this.camera.rotation.y = Math.atan2(direction.x, direction.z);
                     this.camera.rotation.x = 0;
